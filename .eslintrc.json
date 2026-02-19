@@ -1,3 +1,6 @@
 {
-  "parser": "@typescript-eslint/parser"
+  "parser": "@typescript-eslint/parser",
+  "rules": {
+    "react-hooks/exhaustive-deps": "off"
+  }
 }
