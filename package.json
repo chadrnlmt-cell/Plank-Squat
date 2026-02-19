@@ -16,11 +16,16 @@
     "loader-utils": "3.2.1",
     "typescript": "4.9.5"
   },
- "scripts": {
-  "start": "react-scripts start",
-  "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
-  "test": "react-scripts test --env=jsdom",
-  "eject": "react-scripts eject"
-}
-  "browserslist": [">0.2%", "not dead", "not ie <= 11", "not op_mini all"]
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
+    "test": "react-scripts test --env=jsdom",
+    "eject": "react-scripts eject"
+  },
+  "browserslist": [
+    ">0.2%",
+    "not dead",
+    "not ie <= 11",
+    "not op_mini all"
+  ]
 }
