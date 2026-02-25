@@ -8,6 +8,28 @@ export default function Leaderboard({ user, challenges }) {
   const [loading, setLoading] = useState(false);
   const [activeChallenge, setActiveChallenge] = useState(null);
   const [entries, setEntries] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [selectedTeamFilter, setSelectedTeamFilter] = useState("all"); // "all" or teamId
+  const [teamStandings, setTeamStandings] = useState([]);
+
+  // Load teams
+  useEffect(() => {
+    const loadTeams = async () => {
+      try {
+        const q = query(collection(db, "teams"));
+        const snapshot = await getDocs(q);
+        const teamData = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setTeams(teamData);
+      } catch (error) {
+        console.error("Error loading teams:", error);
+        setTeams([]);
+      }
+    };
+    loadTeams();
+  }, []);
 
   // Find the active challenge for the selected movement type
   useEffect(() => {
@@ -26,11 +48,13 @@ export default function Leaderboard({ user, challenges }) {
     const loadLeaderboard = async () => {
       if (!activeChallenge) {
         setEntries([]);
+        setTeamStandings([]);
         return;
       }
 
       setLoading(true);
       try {
+        // Load user stats
         const statsRef = collection(db, "challengeUserStats");
         const qStats = query(
           statsRef,
@@ -38,11 +62,29 @@ export default function Leaderboard({ user, challenges }) {
         );
         const snap = await getDocs(qStats);
 
+        // Load userChallenges to get teamId for each user
+        const userChallengesRef = collection(db, "userChallenges");
+        const qUserChallenges = query(
+          userChallengesRef,
+          where("challengeId", "==", activeChallenge.id)
+        );
+        const userChallengesSnap = await getDocs(qUserChallenges);
+
+        // Create a map of userId -> teamId
+        const userTeamMap = {};
+        userChallengesSnap.docs.forEach((doc) => {
+          const data = doc.data();
+          if (data.userId && data.teamId) {
+            userTeamMap[data.userId] = data.teamId;
+          }
+        });
+
         const rows = snap.docs.map((docSnap) => {
           const data = docSnap.data();
+          const userId = data.userId || null;
           return {
             id: docSnap.id,
-            userId: data.userId || null,
+            userId,
             displayName: data.displayName || "Anonymous",
             photoURL: data.photoURL || null,
             totalSeconds: data.totalSeconds || 0,
@@ -50,22 +92,59 @@ export default function Leaderboard({ user, challenges }) {
             bestSeconds: data.bestSeconds || 0,
             bestReps: data.bestReps || 0,
             firstAchievedAt: data.firstAchievedAt || null,
+            teamId: userTeamMap[userId] || null,
           };
         });
 
         setEntries(rows);
+
+        // Calculate team standings
+        const teamTotals = {};
+        rows.forEach((row) => {
+          if (row.teamId) {
+            if (!teamTotals[row.teamId]) {
+              teamTotals[row.teamId] = {
+                teamId: row.teamId,
+                totalSeconds: 0,
+                totalReps: 0,
+                memberCount: 0,
+              };
+            }
+            teamTotals[row.teamId].totalSeconds += row.totalSeconds || 0;
+            teamTotals[row.teamId].totalReps += row.totalReps || 0;
+            teamTotals[row.teamId].memberCount += 1;
+          }
+        });
+
+        const standings = Object.values(teamTotals).map((t) => {
+          const team = teams.find((tm) => tm.id === t.teamId);
+          return {
+            ...t,
+            teamName: team?.name || "Unknown Team",
+            teamColor: team?.color || "#999",
+          };
+        });
+
+        setTeamStandings(standings);
       } catch (err) {
         console.error("Error loading leaderboard:", err);
         setEntries([]);
+        setTeamStandings([]);
       } finally {
         setLoading(false);
       }
     };
 
     loadLeaderboard();
-  }, [activeChallenge]);
+  }, [activeChallenge, teams]);
 
   const isPlank = movementType === "plank";
+
+  // Filter entries by selected team
+  const filteredEntries =
+    selectedTeamFilter === "all"
+      ? entries
+      : entries.filter((e) => e.teamId === selectedTeamFilter);
 
   // Sorting helpers with tie-breakers
   const compareTotals = (a, b) => {
@@ -116,8 +195,15 @@ export default function Leaderboard({ user, challenges }) {
     return 0;
   };
 
-  const topTotal = [...entries].sort(compareTotals).slice(0, 10);
-  const topBest = [...entries].sort(compareBests).slice(0, 5);
+  const topTotal = [...filteredEntries].sort(compareTotals).slice(0, 10);
+  const topBest = [...filteredEntries].sort(compareBests).slice(0, 5);
+
+  // Sort team standings
+  const sortedTeamStandings = [...teamStandings].sort((a, b) => {
+    const aVal = isPlank ? a.totalSeconds : a.totalReps;
+    const bVal = isPlank ? b.totalSeconds : b.totalReps;
+    return bVal - aVal;
+  });
 
   const formatSeconds = (sec) => {
     const s = Number(sec) || 0;
@@ -125,6 +211,12 @@ export default function Leaderboard({ user, challenges }) {
     const rem = s % 60;
     if (mins === 0) return `${rem}s`;
     return `${mins}m ${rem}s`;
+  };
+
+  // Helper to get team info
+  const getTeamInfo = (teamId) => {
+    const team = teams.find((t) => t.id === teamId);
+    return team || null;
   };
 
   return (
@@ -200,11 +292,167 @@ export default function Leaderboard({ user, challenges }) {
 
       {!loading && activeChallenge && entries.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {/* TEAM STANDINGS */}
+          {teamStandings.length > 0 && (
+            <div>
+              <h3 style={{ marginBottom: "8px" }}>Team Standings</h3>
+              <div
+                style={{
+                  borderRadius: "8px",
+                  border: "1px solid #ddd",
+                  overflow: "hidden",
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: "14px",
+                  }}
+                >
+                  <thead
+                    style={{
+                      backgroundColor: "#f0f0f0",
+                    }}
+                  >
+                    <tr>
+                      <th
+                        style={{
+                          textAlign: "left",
+                          padding: "8px",
+                        }}
+                      >
+                        #
+                      </th>
+                      <th
+                        style={{
+                          textAlign: "left",
+                          padding: "8px",
+                        }}
+                      >
+                        Team
+                      </th>
+                      <th
+                        style={{
+                          textAlign: "center",
+                          padding: "8px",
+                        }}
+                      >
+                        Members
+                      </th>
+                      <th
+                        style={{
+                          textAlign: "right",
+                          padding: "8px",
+                        }}
+                      >
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedTeamStandings.map((team, idx) => {
+                      const totalVal = isPlank
+                        ? team.totalSeconds
+                        : team.totalReps;
+                      return (
+                        <tr
+                          key={team.teamId}
+                          style={{
+                            backgroundColor: "white",
+                            borderTop: "1px solid #eee",
+                          }}
+                        >
+                          <td
+                            style={{
+                              padding: "8px",
+                            }}
+                          >
+                            {idx + 1}
+                          </td>
+                          <td
+                            style={{
+                              padding: "8px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: "12px",
+                                height: "12px",
+                                borderRadius: "50%",
+                                backgroundColor: team.teamColor,
+                              }}
+                            />
+                            {team.teamName}
+                          </td>
+                          <td
+                            style={{
+                              padding: "8px",
+                              textAlign: "center",
+                            }}
+                          >
+                            {team.memberCount}
+                          </td>
+                          <td
+                            style={{
+                              padding: "8px",
+                              textAlign: "right",
+                            }}
+                          >
+                            {isPlank ? formatSeconds(totalVal) : totalVal}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TEAM FILTER */}
+          {teams.length > 0 && (
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontWeight: "bold",
+                  marginBottom: "8px",
+                }}
+              >
+                Filter by Team
+              </label>
+              <select
+                value={selectedTeamFilter}
+                onChange={(e) => setSelectedTeamFilter(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  borderRadius: "6px",
+                  border: "1px solid #ccc",
+                  fontSize: "14px",
+                }}
+              >
+                <option value="all">All Participants</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Top 10 total */}
           <div>
             <h3 style={{ marginBottom: "8px" }}>
               Top 10 by{" "}
               {isPlank ? "Total Plank Time (seconds)" : "Total Squat Reps"}
+              {selectedTeamFilter !== "all" &&
+                ` - ${teams.find((t) => t.id === selectedTeamFilter)?.name || ""}`}
             </h3>
             <div
               style={{
@@ -255,6 +503,7 @@ export default function Leaderboard({ user, challenges }) {
                 <tbody>
                   {topTotal.map((row, idx) => {
                     const totalVal = isPlank ? row.totalSeconds : row.totalReps;
+                    const teamInfo = getTeamInfo(row.teamId);
                     return (
                       <tr
                         key={row.id}
@@ -274,8 +523,21 @@ export default function Leaderboard({ user, challenges }) {
                         <td
                           style={{
                             padding: "8px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
                           }}
                         >
+                          {teamInfo && (
+                            <div
+                              style={{
+                                width: "10px",
+                                height: "10px",
+                                borderRadius: "50%",
+                                backgroundColor: teamInfo.color,
+                              }}
+                            />
+                          )}
                           {row.displayName || "Anonymous"}
                         </td>
                         <td
@@ -296,7 +558,11 @@ export default function Leaderboard({ user, challenges }) {
 
           {/* Top 5 best single day */}
           <div>
-            <h3 style={{ marginBottom: "8px" }}>Top 5 by Best Single Day</h3>
+            <h3 style={{ marginBottom: "8px" }}>
+              Top 5 by Best Single Day
+              {selectedTeamFilter !== "all" &&
+                ` - ${teams.find((t) => t.id === selectedTeamFilter)?.name || ""}`}
+            </h3>
             <div
               style={{
                 borderRadius: "8px",
@@ -346,6 +612,7 @@ export default function Leaderboard({ user, challenges }) {
                 <tbody>
                   {topBest.map((row, idx) => {
                     const bestVal = isPlank ? row.bestSeconds : row.bestReps;
+                    const teamInfo = getTeamInfo(row.teamId);
                     return (
                       <tr
                         key={row.id}
@@ -365,8 +632,21 @@ export default function Leaderboard({ user, challenges }) {
                         <td
                           style={{
                             padding: "8px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
                           }}
                         >
+                          {teamInfo && (
+                            <div
+                              style={{
+                                width: "10px",
+                                height: "10px",
+                                borderRadius: "50%",
+                                backgroundColor: teamInfo.color,
+                              }}
+                            />
+                          )}
                           {row.displayName || "Anonymous"}
                         </td>
                         <td
