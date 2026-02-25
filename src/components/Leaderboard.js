@@ -1,7 +1,9 @@
 // src/components/Leaderboard.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { db } from "../firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
+
+const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
 export default function Leaderboard({ user, challenges }) {
   const [movementType, setMovementType] = useState("plank"); // "plank" | "squat"
@@ -11,10 +13,30 @@ export default function Leaderboard({ user, challenges }) {
   const [teams, setTeams] = useState([]);
   const [selectedTeamFilter, setSelectedTeamFilter] = useState("all"); // "all" or teamId
   const [teamStandings, setTeamStandings] = useState([]);
+  const [lastFetched, setLastFetched] = useState(null); // timestamp of last fetch
 
-  // Load teams
+  // Cache refs
+  const cacheRef = useRef({
+    challengeId: null,
+    entries: [],
+    teams: [],
+    teamStandings: [],
+    timestamp: null,
+  });
+
+  // Load teams (cached with same 5-min logic)
   useEffect(() => {
     const loadTeams = async () => {
+      // Check cache first
+      if (
+        cacheRef.current.teams.length > 0 &&
+        cacheRef.current.timestamp &&
+        Date.now() - cacheRef.current.timestamp < CACHE_DURATION_MS
+      ) {
+        setTeams(cacheRef.current.teams);
+        return;
+      }
+
       try {
         const q = query(collection(db, "teams"));
         const snapshot = await getDocs(q);
@@ -23,6 +45,8 @@ export default function Leaderboard({ user, challenges }) {
           ...doc.data(),
         }));
         setTeams(teamData);
+        cacheRef.current.teams = teamData;
+        cacheRef.current.timestamp = Date.now();
       } catch (error) {
         console.error("Error loading teams:", error);
         setTeams([]);
@@ -49,12 +73,26 @@ export default function Leaderboard({ user, challenges }) {
       if (!activeChallenge) {
         setEntries([]);
         setTeamStandings([]);
+        setLastFetched(null);
+        return;
+      }
+
+      // Check cache: if same challenge and within 5 minutes, use cached data
+      if (
+        cacheRef.current.challengeId === activeChallenge.id &&
+        cacheRef.current.timestamp &&
+        Date.now() - cacheRef.current.timestamp < CACHE_DURATION_MS
+      ) {
+        console.log("Using cached leaderboard data");
+        setEntries(cacheRef.current.entries);
+        setTeamStandings(cacheRef.current.teamStandings);
+        setLastFetched(new Date(cacheRef.current.timestamp));
         return;
       }
 
       setLoading(true);
       try {
-        // Load user stats
+        // Load user stats - NOW includes teamId directly!
         const statsRef = collection(db, "challengeUserStats");
         const qStats = query(
           statsRef,
@@ -62,29 +100,12 @@ export default function Leaderboard({ user, challenges }) {
         );
         const snap = await getDocs(qStats);
 
-        // Load userChallenges to get teamId for each user
-        const userChallengesRef = collection(db, "userChallenges");
-        const qUserChallenges = query(
-          userChallengesRef,
-          where("challengeId", "==", activeChallenge.id)
-        );
-        const userChallengesSnap = await getDocs(qUserChallenges);
-
-        // Create a map of userId -> teamId
-        const userTeamMap = {};
-        userChallengesSnap.docs.forEach((doc) => {
-          const data = doc.data();
-          if (data.userId && data.teamId) {
-            userTeamMap[data.userId] = data.teamId;
-          }
-        });
-
+        // NO MORE userChallenges query needed! teamId is in challengeUserStats now
         const rows = snap.docs.map((docSnap) => {
           const data = docSnap.data();
-          const userId = data.userId || null;
           return {
             id: docSnap.id,
-            userId,
+            userId: data.userId || null,
             displayName: data.displayName || "Anonymous",
             photoURL: data.photoURL || null,
             totalSeconds: data.totalSeconds || 0,
@@ -92,7 +113,7 @@ export default function Leaderboard({ user, challenges }) {
             bestSeconds: data.bestSeconds || 0,
             bestReps: data.bestReps || 0,
             firstAchievedAt: data.firstAchievedAt || null,
-            teamId: userTeamMap[userId] || null,
+            teamId: data.teamId || null, // NEW: read directly from challengeUserStats!
           };
         });
 
@@ -126,6 +147,19 @@ export default function Leaderboard({ user, challenges }) {
         });
 
         setTeamStandings(standings);
+
+        // Cache the results
+        const now = Date.now();
+        cacheRef.current = {
+          challengeId: activeChallenge.id,
+          entries: rows,
+          teamStandings: standings,
+          timestamp: now,
+          teams: teams, // cache teams too
+        };
+        setLastFetched(new Date(now));
+
+        console.log("Leaderboard data fetched and cached");
       } catch (err) {
         console.error("Error loading leaderboard:", err);
         setEntries([]);
@@ -137,6 +171,12 @@ export default function Leaderboard({ user, challenges }) {
 
     loadLeaderboard();
   }, [activeChallenge, teams]);
+
+  // Manual refresh function
+  const handleRefresh = () => {
+    cacheRef.current.timestamp = null; // invalidate cache
+    setActiveChallenge({ ...activeChallenge }); // trigger reload
+  };
 
   const isPlank = movementType === "plank";
 
@@ -260,6 +300,39 @@ export default function Leaderboard({ user, challenges }) {
           Squat
         </button>
       </div>
+
+      {/* Last Updated & Refresh Button */}
+      {lastFetched && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "16px",
+            padding: "8px 12px",
+            backgroundColor: "#f9f9f9",
+            borderRadius: "6px",
+            fontSize: "12px",
+            color: "#666",
+          }}
+        >
+          <span>Last updated: {lastFetched.toLocaleTimeString()}</span>
+          <button
+            onClick={handleRefresh}
+            style={{
+              padding: "4px 12px",
+              fontSize: "12px",
+              backgroundColor: "#4CAF50",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+            }}
+          >
+            Refresh
+          </button>
+        </div>
+      )}
 
       {/* Active Challenge Info */}
       {!activeChallenge && (
