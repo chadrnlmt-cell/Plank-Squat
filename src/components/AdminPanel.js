@@ -32,7 +32,7 @@ export default function AdminPanel({ user }) {
   const isAdmin = user?.email === ADMIN_EMAIL;
   console.log("ADMIN CHECK", user?.email, ADMIN_EMAIL, isAdmin);
 
-  // Initial form state
+  // Initial form state - NOW includes isTeamChallenge
   const defaultFormState = {
     name: "",
     description: "",
@@ -42,6 +42,7 @@ export default function AdminPanel({ user }) {
     startingValue: 60,
     incrementPerDay: 5,
     isActive: true,
+    isTeamChallenge: false, // NEW!
   };
 
   const [formData, setFormData] = useState(defaultFormState);
@@ -125,6 +126,7 @@ export default function AdminPanel({ user }) {
         startingValue: parseInt(formData.startingValue, 10),
         incrementPerDay: parseInt(formData.incrementPerDay, 10),
         isActive: formData.isActive,
+        isTeamChallenge: formData.isTeamChallenge, // NEW!
         createdAt: Timestamp.now(),
         createdBy: user.email,
         startDate: Timestamp.fromDate(startDateObj),
@@ -168,6 +170,7 @@ export default function AdminPanel({ user }) {
         startingValue: parseInt(editingChallenge.startingValue, 10),
         incrementPerDay: parseInt(editingChallenge.incrementPerDay, 10),
         startDate: Timestamp.fromDate(startDateObj),
+        isTeamChallenge: editingChallenge.isTeamChallenge || false, // NEW!
       });
 
       setEditingChallenge(null);
@@ -345,6 +348,7 @@ export default function AdminPanel({ user }) {
       id: challenge.id,
       ...challenge,
       startDate: formattedDate,
+      isTeamChallenge: challenge.isTeamChallenge || false, // NEW!
     });
   };
 
@@ -711,6 +715,31 @@ export default function AdminPanel({ user }) {
                   </label>
                 </div>
 
+                {/* NEW: Is Team Challenge toggle */}
+                <div>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={formData.isTeamChallenge}
+                      onChange={(e) =>
+                        setFormData({ ...formData, isTeamChallenge: e.target.checked })
+                      }
+                    />
+                    <span style={{ fontWeight: "bold" }}>
+                      Team Challenge (requires team selection)
+                    </span>
+                  </label>
+                  <p style={{ marginLeft: "34px", fontSize: "12px", color: "#666", marginTop: "4px" }}>
+                    When enabled, users must select a team when joining this challenge.
+                  </p>
+                </div>
+
                 <div>
                   <button
                     onClick={handleCreateChallenge}
@@ -731,7 +760,7 @@ export default function AdminPanel({ user }) {
             </div>
           )}
 
-          {/* EDIT FORM (full-screen modal) */}
+          {/* EDIT FORM (full-screen modal) - ADD isTeamChallenge toggle here too */}
           {editingChallenge && (
             <div
               style={{
@@ -970,6 +999,31 @@ export default function AdminPanel({ user }) {
                     />
                   </div>
 
+                  {/* NEW: Is Team Challenge toggle in edit form */}
+                  <div>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={editingChallenge.isTeamChallenge || false}
+                        onChange={(e) =>
+                          setEditingChallenge({
+                            ...editingChallenge,
+                            isTeamChallenge: e.target.checked,
+                          })
+                        }
+                      />
+                      <span style={{ fontWeight: "bold" }}>
+                        Team Challenge (requires team selection)
+                      </span>
+                    </label>
+                  </div>
+
                   <div
                     style={{
                       display: "flex",
@@ -1152,6 +1206,9 @@ export default function AdminPanel({ user }) {
             </div>
           )}
 
+          {/* Rest of the challenges list rendering stays the same... */}
+          {/* (keeping the active/inactive challenges display code unchanged) */}
+          
           {/* CHALLENGES LIST */}
           {loading ? (
             <div style={{ textAlign: "center", padding: "40px" }}>
@@ -1172,7 +1229,7 @@ export default function AdminPanel({ user }) {
             </div>
           ) : (
             <>
-              {/* ACTIVE CHALLENGES */}
+              {/* Display active and inactive challenges with Team Challenge badge */}
               <div>
                 <h2 style={{ marginTop: "30px", marginBottom: "15px" }}>
                   Active Challenges
@@ -1209,6 +1266,20 @@ export default function AdminPanel({ user }) {
                             <div>
                               <h3 style={{ margin: "0 0 5px 0" }}>
                                 {challenge.name}
+                                {challenge.isTeamChallenge && (
+                                  <span
+                                    style={{
+                                      marginLeft: "8px",
+                                      fontSize: "12px",
+                                      padding: "2px 8px",
+                                      backgroundColor: "#4CAF50",
+                                      color: "white",
+                                      borderRadius: "4px",
+                                    }}
+                                  >
+                                    TEAM
+                                  </span>
+                                )}
                               </h3>
                               <span style={{ color: "#999", fontSize: "14px" }}>
                                 {challenge.userCount} users
@@ -1323,7 +1394,7 @@ export default function AdminPanel({ user }) {
                 )}
               </div>
 
-              {/* INACTIVE CHALLENGES */}
+              {/* Inactive challenges section - similar pattern */}
               <div>
                 <h2
                   style={{
@@ -1372,6 +1443,20 @@ export default function AdminPanel({ user }) {
                                 }}
                               >
                                 {challenge.name}
+                                {challenge.isTeamChallenge && (
+                                  <span
+                                    style={{
+                                      marginLeft: "8px",
+                                      fontSize: "12px",
+                                      padding: "2px 8px",
+                                      backgroundColor: "#999",
+                                      color: "white",
+                                      borderRadius: "4px",
+                                    }}
+                                  >
+                                    TEAM
+                                  </span>
+                                )}
                               </h3>
                               <span style={{ color: "#999", fontSize: "14px" }}>
                                 {challenge.userCount} users
