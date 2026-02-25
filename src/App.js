@@ -298,7 +298,7 @@ export default function App() {
     }
   };
 
-  const handleJoinChallenge = async (challenge) => {
+  const handleJoinChallenge = async (challenge, teamId = null) => {
     try {
       if (!challenge.startDate || !challenge.numberOfDays) {
         alert("Challenge is not configured correctly.");
@@ -330,6 +330,7 @@ export default function App() {
         userId: user.uid,
         displayName: profileName || user.displayName || null,
         challengeId: challenge.id,
+        teamId: teamId || null,
         joinedAt: Timestamp.now(),
         currentDay: startDay,
         lastCompletedDay: 0,
@@ -541,7 +542,7 @@ export default function App() {
                     <ChallengeCard
                       key={challenge.id}
                       challenge={challenge}
-                      onJoin={() => handleJoinChallenge(challenge)}
+                      onJoin={handleJoinChallenge}
                       alreadyJoined={alreadyJoined}
                     />
                   );
