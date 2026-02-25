@@ -24,6 +24,9 @@ export default function Leaderboard({ user, challenges }) {
     timestamp: null,
   });
 
+  // Check if active challenge is a team challenge
+  const isTeamChallenge = activeChallenge?.isTeamChallenge || false;
+
   // Load teams (cached with same 5-min logic)
   useEffect(() => {
     const loadTeams = async () => {
@@ -119,41 +122,45 @@ export default function Leaderboard({ user, challenges }) {
 
         setEntries(rows);
 
-        // Calculate team standings
-        const teamTotals = {};
-        rows.forEach((row) => {
-          if (row.teamId) {
-            if (!teamTotals[row.teamId]) {
-              teamTotals[row.teamId] = {
-                teamId: row.teamId,
-                totalSeconds: 0,
-                totalReps: 0,
-                memberCount: 0,
-              };
+        // Calculate team standings ONLY if this is a team challenge
+        if (isTeamChallenge) {
+          const teamTotals = {};
+          rows.forEach((row) => {
+            if (row.teamId) {
+              if (!teamTotals[row.teamId]) {
+                teamTotals[row.teamId] = {
+                  teamId: row.teamId,
+                  totalSeconds: 0,
+                  totalReps: 0,
+                  memberCount: 0,
+                };
+              }
+              teamTotals[row.teamId].totalSeconds += row.totalSeconds || 0;
+              teamTotals[row.teamId].totalReps += row.totalReps || 0;
+              teamTotals[row.teamId].memberCount += 1;
             }
-            teamTotals[row.teamId].totalSeconds += row.totalSeconds || 0;
-            teamTotals[row.teamId].totalReps += row.totalReps || 0;
-            teamTotals[row.teamId].memberCount += 1;
-          }
-        });
+          });
 
-        const standings = Object.values(teamTotals).map((t) => {
-          const team = teams.find((tm) => tm.id === t.teamId);
-          return {
-            ...t,
-            teamName: team?.name || "Unknown Team",
-            teamColor: team?.color || "#999",
-          };
-        });
+          const standings = Object.values(teamTotals).map((t) => {
+            const team = teams.find((tm) => tm.id === t.teamId);
+            return {
+              ...t,
+              teamName: team?.name || "Unknown Team",
+              teamColor: team?.color || "#999",
+            };
+          });
 
-        setTeamStandings(standings);
+          setTeamStandings(standings);
+        } else {
+          setTeamStandings([]);
+        }
 
         // Cache the results
         const now = Date.now();
         cacheRef.current = {
           challengeId: activeChallenge.id,
           entries: rows,
-          teamStandings: standings,
+          teamStandings: isTeamChallenge ? teamStandings : [],
           timestamp: now,
           teams: teams, // cache teams too
         };
@@ -170,7 +177,7 @@ export default function Leaderboard({ user, challenges }) {
     };
 
     loadLeaderboard();
-  }, [activeChallenge, teams]);
+  }, [activeChallenge, teams, isTeamChallenge]);
 
   // Manual refresh function
   const handleRefresh = () => {
@@ -180,11 +187,11 @@ export default function Leaderboard({ user, challenges }) {
 
   const isPlank = movementType === "plank";
 
-  // Filter entries by selected team
+  // Filter entries by selected team (only for team challenges)
   const filteredEntries =
-    selectedTeamFilter === "all"
-      ? entries
-      : entries.filter((e) => e.teamId === selectedTeamFilter);
+    isTeamChallenge && selectedTeamFilter !== "all"
+      ? entries.filter((e) => e.teamId === selectedTeamFilter)
+      : entries;
 
   // Sorting helpers with tie-breakers
   const compareTotals = (a, b) => {
@@ -350,7 +357,23 @@ export default function Leaderboard({ user, challenges }) {
             backgroundColor: "#f5f5f5",
           }}
         >
-          <div style={{ fontWeight: "600" }}>{activeChallenge.name}</div>
+          <div style={{ fontWeight: "600" }}>
+            {activeChallenge.name}
+            {isTeamChallenge && (
+              <span
+                style={{
+                  marginLeft: "8px",
+                  fontSize: "11px",
+                  padding: "2px 6px",
+                  backgroundColor: "#4CAF50",
+                  color: "white",
+                  borderRadius: "3px",
+                }}
+              >
+                TEAM CHALLENGE
+              </span>
+            )}
+          </div>
           <div style={{ fontSize: "12px", color: "#666" }}>
             {activeChallenge.description}
           </div>
@@ -365,8 +388,8 @@ export default function Leaderboard({ user, challenges }) {
 
       {!loading && activeChallenge && entries.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          {/* TEAM STANDINGS */}
-          {teamStandings.length > 0 && (
+          {/* TEAM STANDINGS - Only show for team challenges */}
+          {isTeamChallenge && teamStandings.length > 0 && (
             <div>
               <h3 style={{ marginBottom: "8px" }}>Team Standings</h3>
               <div
@@ -486,8 +509,8 @@ export default function Leaderboard({ user, challenges }) {
             </div>
           )}
 
-          {/* TEAM FILTER */}
-          {teams.length > 0 && (
+          {/* TEAM FILTER - Only show for team challenges */}
+          {isTeamChallenge && teams.length > 0 && (
             <div>
               <label
                 style={{
@@ -524,7 +547,7 @@ export default function Leaderboard({ user, challenges }) {
             <h3 style={{ marginBottom: "8px" }}>
               Top 10 by{" "}
               {isPlank ? "Total Plank Time (seconds)" : "Total Squat Reps"}
-              {selectedTeamFilter !== "all" &&
+              {isTeamChallenge && selectedTeamFilter !== "all" &&
                 ` - ${teams.find((t) => t.id === selectedTeamFilter)?.name || ""}`}
             </h3>
             <div
@@ -601,7 +624,7 @@ export default function Leaderboard({ user, challenges }) {
                             gap: "8px",
                           }}
                         >
-                          {teamInfo && (
+                          {isTeamChallenge && teamInfo && (
                             <div
                               style={{
                                 width: "10px",
@@ -633,7 +656,7 @@ export default function Leaderboard({ user, challenges }) {
           <div>
             <h3 style={{ marginBottom: "8px" }}>
               Top 5 by Best Single Day
-              {selectedTeamFilter !== "all" &&
+              {isTeamChallenge && selectedTeamFilter !== "all" &&
                 ` - ${teams.find((t) => t.id === selectedTeamFilter)?.name || ""}`}
             </h3>
             <div
@@ -710,7 +733,7 @@ export default function Leaderboard({ user, challenges }) {
                             gap: "8px",
                           }}
                         >
-                          {teamInfo && (
+                          {isTeamChallenge && teamInfo && (
                             <div
                               style={{
                                 width: "10px",
