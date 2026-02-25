@@ -9,7 +9,10 @@ export default function ChallengeCard({ challenge, onJoin }) {
   const [showTeamSelect, setShowTeamSelect] = useState(false);
   const [loadingTeams, setLoadingTeams] = useState(false);
 
-  // Load teams when user clicks Join
+  // Check if this is a team challenge
+  const isTeamChallenge = challenge.isTeamChallenge || false;
+
+  // Load teams when user clicks Join (only for team challenges)
   const loadTeams = async () => {
     try {
       setLoadingTeams(true);
@@ -29,13 +32,24 @@ export default function ChallengeCard({ challenge, onJoin }) {
   };
 
   const handleJoinClick = async () => {
-    // Load teams first
-    await loadTeams();
-    setShowTeamSelect(true);
+    // If it's a team challenge, show team selection modal
+    if (isTeamChallenge) {
+      await loadTeams();
+      setShowTeamSelect(true);
+    } else {
+      // If it's NOT a team challenge, join directly without team selection
+      onJoin(challenge, null);
+    }
   };
 
   const handleConfirmJoin = () => {
-    // Call onJoin with selected team (or null if no team selected)
+    // If team challenge, require team selection
+    if (isTeamChallenge && !selectedTeam) {
+      alert("Please select a team to join this team challenge.");
+      return;
+    }
+
+    // Call onJoin with selected team (or null for individual challenges)
     onJoin(challenge, selectedTeam || null);
     setShowTeamSelect(false);
     setSelectedTeam("");
@@ -71,6 +85,20 @@ export default function ChallengeCard({ challenge, onJoin }) {
       >
         <h3 style={{ margin: "0 0 10px 0", color: "#333" }}>
           {challenge.name}
+          {isTeamChallenge && (
+            <span
+              style={{
+                marginLeft: "8px",
+                fontSize: "12px",
+                padding: "2px 8px",
+                backgroundColor: "#4CAF50",
+                color: "white",
+                borderRadius: "4px",
+              }}
+            >
+              TEAM CHALLENGE
+            </span>
+          )}
         </h3>
         <p style={{ margin: "5px 0", color: "#666", fontSize: "14px" }}>
           {challenge.description}
@@ -95,8 +123,8 @@ export default function ChallengeCard({ challenge, onJoin }) {
         </button>
       </div>
 
-      {/* TEAM SELECTION MODAL */}
-      {showTeamSelect && (
+      {/* TEAM SELECTION MODAL - Only shown for team challenges */}
+      {showTeamSelect && isTeamChallenge && (
         <div
           style={{
             position: "fixed",
@@ -123,7 +151,7 @@ export default function ChallengeCard({ challenge, onJoin }) {
           >
             <h2>Join {challenge.name}</h2>
             <p style={{ color: "#666", marginBottom: "20px" }}>
-              Would you like to join as part of a team?
+              This is a team challenge. Please select your team to join.
             </p>
 
             {loadingTeams ? (
@@ -137,7 +165,7 @@ export default function ChallengeCard({ challenge, onJoin }) {
                     marginBottom: "8px",
                   }}
                 >
-                  Select a Team (optional)
+                  Select a Team *
                 </label>
                 <select
                   value={selectedTeam}
@@ -150,7 +178,7 @@ export default function ChallengeCard({ challenge, onJoin }) {
                     border: "1px solid #ddd",
                   }}
                 >
-                  <option value="">No Team (Individual)</option>
+                  <option value="">-- Choose a team --</option>
                   {teams.map((team) => (
                     <option key={team.id} value={team.id}>
                       {team.name}
@@ -159,23 +187,29 @@ export default function ChallengeCard({ challenge, onJoin }) {
                 </select>
               </div>
             ) : (
-              <p style={{ color: "#999", marginBottom: "20px" }}>
-                No teams available. You'll join as an individual.
-              </p>
+              <div style={{ marginBottom: "20px" }}>
+                <p style={{ color: "#d32f2f", fontWeight: "bold" }}>
+                  No teams available!
+                </p>
+                <p style={{ color: "#666", fontSize: "14px" }}>
+                  An admin needs to create teams first. Contact your administrator.
+                </p>
+              </div>
             )}
 
             <div style={{ display: "flex", gap: "10px" }}>
               <button
                 onClick={handleConfirmJoin}
+                disabled={teams.length === 0}
                 style={{
                   flex: 1,
                   padding: "12px",
                   fontSize: "16px",
-                  backgroundColor: "#4CAF50",
+                  backgroundColor: teams.length === 0 ? "#ccc" : "#4CAF50",
                   color: "white",
                   border: "none",
                   borderRadius: "5px",
-                  cursor: "pointer",
+                  cursor: teams.length === 0 ? "not-allowed" : "pointer",
                 }}
               >
                 Join Challenge
