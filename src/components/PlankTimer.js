@@ -12,7 +12,7 @@ import { getPhoenixDate } from "../utils";
 import { updatePlankStatsOnSuccess } from "../statsHelpers";
 
 // simple helper to request/release screen wake lock
-// Uses the Screen Wake Lock API if supported by the browser.[web:17][web:18][web:39]
+// Uses the Screen Wake Lock API if supported by the browser.
 async function requestScreenWakeLock() {
   try {
     // extra defensive checks so we don't crash on older browsers
@@ -39,6 +39,7 @@ export default function PlankTimer({
   userId,
   user,
   displayName, // profile display name from App
+  teamId, // NEW: pass teamId from parent
   numberOfDays,
   onComplete,
   onCancel,
@@ -163,7 +164,7 @@ export default function PlankTimer({
     let isMounted = true;
 
     const ensureWakeLock = async () => {
-      // Only try to keep screen on while plank is actually running.[web:17][web:20]
+      // Only try to keep screen on while plank is actually running.
       if (stage === "active" || stage === "autoStopping") {
         if (!wakeLockRef.current) {
           const wl = await requestScreenWakeLock();
@@ -187,7 +188,7 @@ export default function PlankTimer({
     ensureWakeLock();
 
     const handleVisibility = async () => {
-      // extra guard so we don't call the API where it doesn't exist[web:16][web:39]
+      // extra guard so we don't call the API where it doesn't exist
       const hasWakeLockApi =
         typeof navigator !== "undefined" &&
         "wakeLock" in navigator &&
@@ -266,13 +267,14 @@ export default function PlankTimer({
         timestamp: Timestamp.fromDate(getPhoenixDate()),
       });
 
-      // If success, update stats with overrideDisplayName so leaderboard uses profile name
+      // If success, update stats with overrideDisplayName and teamId
       if (success && user) {
         await updatePlankStatsOnSuccess({
           user,
           challengeId,
           actualSeconds: actualValue,
           overrideDisplayName: displayName || undefined,
+          teamId: teamId || null, // NEW: pass teamId for caching
         });
       }
 
