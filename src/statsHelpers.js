@@ -51,7 +51,7 @@ async function ensureUserStats(normUser) {
 /**
  * Ensure a challengeUserStats document exists and return its ref + data.
  */
-async function ensureChallengeUserStats(normUser, challengeId, movementType) {
+async function ensureChallengeUserStats(normUser, challengeId, movementType, teamId = null) {
   if (!normUser || !challengeId) return { ref: null, data: null };
 
   const id = `${challengeId}_${normUser.uid}`;
@@ -64,6 +64,7 @@ async function ensureChallengeUserStats(normUser, challengeId, movementType) {
       userId: normUser.uid,
       displayName: normUser.displayName,
       movementType, // "plank" or "squat"
+      teamId: teamId || null, // NEW: cache teamId for optimized leaderboard reads
       totalSeconds: 0,
       totalReps: 0,
       bestSeconds: 0,
@@ -77,6 +78,7 @@ async function ensureChallengeUserStats(normUser, challengeId, movementType) {
       movementType,
       challengeId,
       userId: normUser.uid,
+      teamId,
     });
     return { ref, data: initialData };
   }
@@ -92,6 +94,7 @@ export async function updateSquatStatsOnSuccess({
   challengeId,
   actualReps,
   overrideDisplayName,
+  teamId = null, // NEW: optional teamId for caching
 }) {
   if (!challengeId || typeof actualReps !== "number") {
     console.warn("updateSquatStatsOnSuccess skipped:", {
@@ -108,6 +111,7 @@ export async function updateSquatStatsOnSuccess({
     actualReps,
     userId: normUser?.uid,
     displayName: normUser?.displayName,
+    teamId,
   });
 
   // ----- userStats -----
@@ -128,7 +132,7 @@ export async function updateSquatStatsOnSuccess({
 
   // ----- challengeUserStats -----
   const { ref: challengeStatsRef, data: challengeStats } =
-    await ensureChallengeUserStats(normUser, challengeId, "squat");
+    await ensureChallengeUserStats(normUser, challengeId, "squat", teamId);
 
   if (!challengeStatsRef || !challengeStats) {
     console.warn("No challengeStatsRef/data for squat stats:", {
@@ -147,19 +151,27 @@ export async function updateSquatStatsOnSuccess({
     newFirstAchievedAt = serverTimestamp();
   }
 
-  await updateDoc(challengeStatsRef, {
+  // NEW: Update teamId if provided (for existing docs)
+  const updates = {
     totalReps: newTotalReps,
     bestReps: newBestReps,
     firstAchievedAt: newFirstAchievedAt,
     displayName: normUser.displayName || challengeStats.displayName || "",
     updatedAt: serverTimestamp(),
-  });
+  };
+
+  if (teamId !== undefined && teamId !== challengeStats.teamId) {
+    updates.teamId = teamId;
+  }
+
+  await updateDoc(challengeStatsRef, updates);
 
   console.log("Updated squat challengeUserStats:", {
     challengeId,
     userId: normUser.uid,
     newTotalReps,
     newBestReps,
+    teamId,
   });
 }
 
@@ -171,6 +183,7 @@ export async function updatePlankStatsOnSuccess({
   challengeId,
   actualSeconds,
   overrideDisplayName,
+  teamId = null, // NEW: optional teamId for caching
 }) {
   const normUser = normalizeUser(user, overrideDisplayName);
   if (!normUser || !challengeId || typeof actualSeconds !== "number") {
@@ -187,6 +200,7 @@ export async function updatePlankStatsOnSuccess({
     actualSeconds,
     userId: normUser.uid,
     displayName: normUser.displayName,
+    teamId,
   });
 
   // ----- userStats -----
@@ -211,7 +225,7 @@ export async function updatePlankStatsOnSuccess({
 
   // ----- challengeUserStats -----
   const { ref: challengeStatsRef, data: challengeStats } =
-    await ensureChallengeUserStats(normUser, challengeId, "plank");
+    await ensureChallengeUserStats(normUser, challengeId, "plank", teamId);
 
   if (!challengeStatsRef || !challengeStats) {
     console.warn("No challengeStatsRef/data for plank stats:", {
@@ -230,18 +244,26 @@ export async function updatePlankStatsOnSuccess({
     newFirstAchievedAt = serverTimestamp();
   }
 
-  await updateDoc(challengeStatsRef, {
+  // NEW: Update teamId if provided (for existing docs)
+  const updates = {
     totalSeconds: newTotalSeconds,
     bestSeconds: newBestSeconds,
     firstAchievedAt: newFirstAchievedAt,
     displayName: normUser.displayName || challengeStats.displayName || "",
     updatedAt: serverTimestamp(),
-  });
+  };
+
+  if (teamId !== undefined && teamId !== challengeStats.teamId) {
+    updates.teamId = teamId;
+  }
+
+  await updateDoc(challengeStatsRef, updates);
 
   console.log("Updated plank challengeUserStats:", {
     challengeId,
     userId: normUser.uid,
     newTotalSeconds,
     newBestSeconds,
+    teamId,
   });
 }
