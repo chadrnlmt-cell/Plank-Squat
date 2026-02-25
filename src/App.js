@@ -300,6 +300,16 @@ export default function App() {
 
   const handleJoinChallenge = async (challenge, teamId = null) => {
     try {
+      // NEW: Check if user has already joined this challenge
+      const alreadyJoined = userChallenges.some(
+        (uc) => uc.challengeId === challenge.id
+      );
+
+      if (alreadyJoined) {
+        alert("You've already joined this challenge!");
+        return;
+      }
+
       if (!challenge.startDate || !challenge.numberOfDays) {
         alert("Challenge is not configured correctly.");
         return;
