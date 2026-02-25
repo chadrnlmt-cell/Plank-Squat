@@ -14,8 +14,10 @@ import {
   writeBatch,
   Timestamp,
 } from "firebase/firestore";
+import TeamManagement from "./TeamManagement";
 
 export default function AdminPanel({ user }) {
+  const [activeAdminTab, setActiveAdminTab] = useState("challenges");
   const [challenges, setChallenges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -403,7 +405,7 @@ export default function AdminPanel({ user }) {
     );
   }
 
-  // ADMIN PANEL
+  // ADMIN PANEL with TABS
   return (
     <div
       style={{
@@ -414,1095 +416,1153 @@ export default function AdminPanel({ user }) {
     >
       <h1>Admin Panel</h1>
 
-      {/* CREATE NEW CHALLENGE BUTTON */}
-      <button
-        onClick={() => setShowCreateForm(!showCreateForm)}
+      {/* TAB NAVIGATION */}
+      <div
         style={{
-          padding: "12px 20px",
-          fontSize: "16px",
-          backgroundColor: "#4CAF50",
-          color: "white",
-          border: "none",
-          borderRadius: "5px",
-          cursor: "pointer",
+          display: "flex",
+          gap: "10px",
           marginBottom: "20px",
+          borderBottom: "2px solid #ddd",
         }}
       >
-        {showCreateForm ? "Cancel" : "+ Create New Challenge"}
-      </button>
-
-      {/* CREATE FORM */}
-      {showCreateForm && (
-        <div
+        <button
+          onClick={() => setActiveAdminTab("challenges")}
           style={{
-            backgroundColor: "white",
-            padding: "20px",
-            borderRadius: "8px",
-            marginBottom: "20px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+            padding: "12px 24px",
+            fontSize: "16px",
+            backgroundColor:
+              activeAdminTab === "challenges" ? "#4CAF50" : "transparent",
+            color: activeAdminTab === "challenges" ? "white" : "#666",
+            border: "none",
+            borderBottom:
+              activeAdminTab === "challenges"
+                ? "3px solid #4CAF50"
+                : "3px solid transparent",
+            cursor: "pointer",
+            fontWeight: activeAdminTab === "challenges" ? "bold" : "normal",
           }}
         >
-          <h2>Create New Challenge</h2>
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "15px" }}
-          >
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontWeight: "bold",
-                  marginBottom: "5px",
-                }}
-              >
-                Challenge Name *
-              </label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="e.g., Plank Challenge #3"
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "5px",
-                  border: "1px solid #ddd",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontWeight: "bold",
-                  marginBottom: "5px",
-                }}
-              >
-                Description *
-              </label>
-              <textarea
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
-                placeholder="e.g., Hold a plank position for increasing durations"
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "5px",
-                  border: "1px solid #ddd",
-                  minHeight: "80px",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontWeight: "bold",
-                  marginBottom: "5px",
-                }}
-              >
-                Type
-              </label>
-              <select
-                value={formData.type}
-                onChange={(e) =>
-                  setFormData({ ...formData, type: e.target.value })
-                }
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "5px",
-                  border: "1px solid #ddd",
-                }}
-              >
-                <option value="plank">Plank (seconds)</option>
-                <option value="squat">Squat (reps)</option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontWeight: "bold",
-                  marginBottom: "5px",
-                }}
-              >
-                Start Date *
-              </label>
-              <input
-                type="date"
-                value={formData.startDate}
-                onChange={(e) =>
-                  setFormData({ ...formData, startDate: e.target.value })
-                }
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "5px",
-                  border: "1px solid #ddd",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontWeight: "bold",
-                  marginBottom: "5px",
-                }}
-              >
-                Number of Days
-              </label>
-              <input
-                type="number"
-                value={formData.numberOfDays}
-                onChange={(e) =>
-                  setFormData({ ...formData, numberOfDays: e.target.value })
-                }
-                min="1"
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "5px",
-                  border: "1px solid #ddd",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontWeight: "bold",
-                  marginBottom: "5px",
-                }}
-              >
-                Starting Value ({formData.type === "plank" ? "seconds" : "reps"}
-                )
-              </label>
-              <input
-                type="number"
-                value={formData.startingValue}
-                onChange={(e) =>
-                  setFormData({ ...formData, startingValue: e.target.value })
-                }
-                min="1"
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "5px",
-                  border: "1px solid #ddd",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontWeight: "bold",
-                  marginBottom: "5px",
-                }}
-              >
-                Increment Per Day
-              </label>
-              <input
-                type="number"
-                value={formData.incrementPerDay}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    incrementPerDay: e.target.value,
-                  })
-                }
-                min="0"
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "5px",
-                  border: "1px solid #ddd",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={formData.isActive}
-                  onChange={(e) =>
-                    setFormData({ ...formData, isActive: e.target.checked })
-                  }
-                />
-                <span style={{ fontWeight: "bold" }}>
-                  Active (visible to users)
-                </span>
-              </label>
-            </div>
-
-            <div>
-              <button
-                onClick={handleCreateChallenge}
-                style={{
-                  padding: "12px",
-                  fontSize: "16px",
-                  backgroundColor: "#4CAF50",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "5px",
-                  cursor: "pointer",
-                }}
-              >
-                Create Challenge
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT FORM (full-screen modal) */}
-      {editingChallenge && (
-        <div
+          Challenges
+        </button>
+        <button
+          onClick={() => setActiveAdminTab("teams")}
           style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: "20px",
+            padding: "12px 24px",
+            fontSize: "16px",
+            backgroundColor:
+              activeAdminTab === "teams" ? "#4CAF50" : "transparent",
+            color: activeAdminTab === "teams" ? "white" : "#666",
+            border: "none",
+            borderBottom:
+              activeAdminTab === "teams"
+                ? "3px solid #4CAF50"
+                : "3px solid transparent",
+            cursor: "pointer",
+            fontWeight: activeAdminTab === "teams" ? "bold" : "normal",
           }}
         >
-          <div
-            style={{
-              backgroundColor: "white",
-              padding: "30px",
-              borderRadius: "8px",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              maxWidth: "600px",
-              width: "100%",
-            }}
-          >
-            <h2>Edit Challenge</h2>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "15px",
-                marginTop: "10px",
-              }}
-            >
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "bold",
-                    marginBottom: "5px",
-                  }}
-                >
-                  Challenge Name *
-                </label>
-                <input
-                  type="text"
-                  value={editingChallenge.name}
-                  onChange={(e) =>
-                    setEditingChallenge({
-                      ...editingChallenge,
-                      name: e.target.value,
-                    })
-                  }
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "5px",
-                    border: "1px solid #ddd",
-                  }}
-                />
-              </div>
+          Teams
+        </button>
+      </div>
 
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "bold",
-                    marginBottom: "5px",
-                  }}
-                >
-                  Description *
-                </label>
-                <textarea
-                  value={editingChallenge.description}
-                  onChange={(e) =>
-                    setEditingChallenge({
-                      ...editingChallenge,
-                      description: e.target.value,
-                    })
-                  }
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "5px",
-                    border: "1px solid #ddd",
-                    minHeight: "80px",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "bold",
-                    marginBottom: "5px",
-                  }}
-                >
-                  Type
-                </label>
-                <select
-                  value={editingChallenge.type}
-                  onChange={(e) =>
-                    setEditingChallenge({
-                      ...editingChallenge,
-                      type: e.target.value,
-                    })
-                  }
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "5px",
-                    border: "1px solid #ddd",
-                  }}
-                >
-                  <option value="plank">Plank (seconds)</option>
-                  <option value="squat">Squat (reps)</option>
-                </select>
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "bold",
-                    marginBottom: "5px",
-                  }}
-                >
-                  Start Date *
-                </label>
-                <input
-                  type="date"
-                  value={editingChallenge.startDate}
-                  onChange={(e) =>
-                    setEditingChallenge({
-                      ...editingChallenge,
-                      startDate: e.target.value,
-                    })
-                  }
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "5px",
-                    border: "1px solid #ddd",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "bold",
-                    marginBottom: "5px",
-                  }}
-                >
-                  Number of Days
-                </label>
-                <input
-                  type="number"
-                  value={editingChallenge.numberOfDays}
-                  onChange={(e) =>
-                    setEditingChallenge({
-                      ...editingChallenge,
-                      numberOfDays: parseInt(e.target.value, 10),
-                    })
-                  }
-                  min="1"
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "5px",
-                    border: "1px solid #ddd",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "bold",
-                    marginBottom: "5px",
-                  }}
-                >
-                  Starting Value (
-                  {editingChallenge.type === "plank" ? "seconds" : "reps"})
-                </label>
-                <input
-                  type="number"
-                  value={editingChallenge.startingValue}
-                  onChange={(e) =>
-                    setEditingChallenge({
-                      ...editingChallenge,
-                      startingValue: parseInt(e.target.value, 10),
-                    })
-                  }
-                  min="1"
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "5px",
-                    border: "1px solid #ddd",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "bold",
-                    marginBottom: "5px",
-                  }}
-                >
-                  Increment Per Day
-                </label>
-                <input
-                  type="number"
-                  value={editingChallenge.incrementPerDay}
-                  onChange={(e) =>
-                    setEditingChallenge({
-                      ...editingChallenge,
-                      incrementPerDay: parseInt(e.target.value, 10),
-                    })
-                  }
-                  min="0"
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "5px",
-                    border: "1px solid #ddd",
-                  }}
-                />
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: "10px",
-                  marginTop: "10px",
-                }}
-              >
-                <button
-                  onClick={confirmEdit}
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    fontSize: "16px",
-                    backgroundColor: "#4CAF50",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "5px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Save Changes
-                </button>
-                <button
-                  onClick={() => setEditingChallenge(null)}
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    fontSize: "16px",
-                    backgroundColor: "#999",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "5px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CONFIRMATION MODAL */}
-      {confirmAction && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 2000,
-            padding: "20px",
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "white",
-              padding: "30px",
-              borderRadius: "8px",
-              maxWidth: "500px",
-              width: "100%",
-            }}
-          >
-            <h2>
-              {confirmAction.type === "reset"
-                ? "Reset Challenge"
-                : "Confirm Action"}
-            </h2>
-            <p
-              style={{
-                fontSize: "16px",
-                marginBottom: "20px",
-                color: "#333",
-              }}
-            >
-              {confirmAction.message}
-            </p>
-
-            {confirmAction.type === "reset" && (
-              <div style={{ marginBottom: "20px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontWeight: "bold",
-                    marginBottom: "8px",
-                  }}
-                >
-                  Type RESET to confirm
-                </label>
-                <input
-                  type="text"
-                  value={resetConfirmText}
-                  onChange={(e) => setResetConfirmText(e.target.value)}
-                  placeholder="Type RESET"
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "5px",
-                    border: "1px solid #ddd",
-                    fontSize: "14px",
-                  }}
-                />
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button
-                onClick={() => {
-                  if (confirmAction.type === "confirmEdit") {
-                    confirmEdit();
-                  } else if (confirmAction.type === "deactivate") {
-                    confirmDeactivate(confirmAction.challengeId);
-                  } else if (confirmAction.type === "delete") {
-                    confirmDelete(confirmAction.challengeId);
-                  } else if (confirmAction.type === "reset") {
-                    confirmReset(confirmAction.challengeId);
-                  }
-                }}
-                disabled={
-                  confirmAction.type === "reset" && resetConfirmText !== "RESET"
-                }
-                style={{
-                  flex: 1,
-                  padding: "12px",
-                  fontSize: "16px",
-                  backgroundColor:
-                    confirmAction.type === "delete" ||
-                    confirmAction.type === "reset"
-                      ? "#d32f2f"
-                      : "#4CAF50",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "5px",
-                  cursor:
-                    confirmAction.type === "reset" &&
-                    resetConfirmText !== "RESET"
-                      ? "not-allowed"
-                      : "pointer",
-                  opacity:
-                    confirmAction.type === "reset" &&
-                    resetConfirmText !== "RESET"
-                      ? 0.5
-                      : 1,
-                }}
-              >
-                {confirmAction.type === "confirmEdit"
-                  ? "Save Changes"
-                  : confirmAction.type === "deactivate"
-                  ? "Deactivate"
-                  : confirmAction.type === "delete"
-                  ? "Delete"
-                  : "Confirm"}
-              </button>
-              <button
-                onClick={() => {
-                  setConfirmAction(null);
-                  setResetConfirmText("");
-                }}
-                style={{
-                  flex: 1,
-                  padding: "12px",
-                  fontSize: "16px",
-                  backgroundColor: "#999",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "5px",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CHALLENGES LIST */}
-      {loading ? (
-        <div style={{ textAlign: "center", padding: "40px" }}>
-          <p>Loading challenges...</p>
-        </div>
-      ) : challenges.length === 0 ? (
-        <div
-          style={{
-            textAlign: "center",
-            padding: "40px",
-            backgroundColor: "white",
-            borderRadius: "8px",
-          }}
-        >
-          <p style={{ color: "#999" }}>
-            No challenges yet. Create one to get started!
-          </p>
-        </div>
+      {/* TAB CONTENT */}
+      {activeAdminTab === "teams" ? (
+        <TeamManagement user={user} />
       ) : (
         <>
-          {/* ACTIVE CHALLENGES */}
-          <div>
-            <h2 style={{ marginTop: "30px", marginBottom: "15px" }}>
-              Active Challenges
-            </h2>
-            {challenges.filter((c) => c.isActive).length === 0 ? (
-              <p style={{ color: "#999" }}>No active challenges</p>
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "15px",
-                }}
-              >
-                {challenges
-                  .filter((c) => c.isActive)
-                  .map((challenge) => (
-                    <div
-                      key={challenge.id}
-                      style={{
-                        backgroundColor: "white",
-                        padding: "20px",
-                        borderRadius: "8px",
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                        }}
-                      >
-                        <div>
-                          <h3 style={{ margin: "0 0 5px 0" }}>
-                            {challenge.name}
-                          </h3>
-                          <span style={{ color: "#999", fontSize: "14px" }}>
-                            {challenge.userCount} users
-                          </span>
-                        </div>
-                      </div>
-                      <p
-                        style={{
-                          margin: "5px 0",
-                          color: "#666",
-                          fontSize: "14px",
-                        }}
-                      >
-                        {challenge.numberOfDays} days • Starts{" "}
-                        {challenge.startDate?.toDate
-                          ? challenge.startDate.toDate().toLocaleDateString()
-                          : ""}
-                      </p>
-                      <p
-                        style={{
-                          margin: "5px 0",
-                          color: "#666",
-                          fontSize: "14px",
-                        }}
-                      >
-                        {challenge.description}
-                      </p>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "8px",
-                          marginTop: "15px",
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <button
-                          onClick={() => handleEditClick(challenge)}
-                          style={{
-                            padding: "8px 12px",
-                            fontSize: "14px",
-                            backgroundColor: "#2196F3",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeactivate(challenge)}
-                          style={{
-                            padding: "8px 12px",
-                            fontSize: "14px",
-                            backgroundColor: "#FF9800",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Deactivate
-                        </button>
-                        <button
-                          onClick={() => handleReset(challenge)}
-                          style={{
-                            padding: "8px 12px",
-                            fontSize: "14px",
-                            backgroundColor: "#FF5722",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Reset Challenge
-                        </button>
-                        <button
-                          onClick={() => handleDelete(challenge)}
-                          style={{
-                            padding: "8px 12px",
-                            fontSize: "14px",
-                            backgroundColor: "#d32f2f",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Delete
-                        </button>
-                        <button
-                          onClick={() =>
-                            loadMissedDaysForChallenge(challenge.id)
-                          }
-                          style={{
-                            padding: "8px 12px",
-                            fontSize: "14px",
-                            backgroundColor: "#6A1B9A",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          View Missed Days
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
+          {/* CHALLENGES TAB CONTENT (all existing challenge code) */}
 
-          {/* INACTIVE CHALLENGES */}
-          <div>
-            <h2
+          {/* CREATE NEW CHALLENGE BUTTON */}
+          <button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            style={{
+              padding: "12px 20px",
+              fontSize: "16px",
+              backgroundColor: "#4CAF50",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+              cursor: "pointer",
+              marginBottom: "20px",
+            }}
+          >
+            {showCreateForm ? "Cancel" : "+ Create New Challenge"}
+          </button>
+
+          {/* CREATE FORM */}
+          {showCreateForm && (
+            <div
               style={{
-                marginTop: "40px",
-                marginBottom: "15px",
-                color: "#999",
+                backgroundColor: "white",
+                padding: "20px",
+                borderRadius: "8px",
+                marginBottom: "20px",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
               }}
             >
-              Inactive Challenges
-            </h2>
-            {challenges.filter((c) => !c.isActive).length === 0 ? (
-              <p style={{ color: "#999" }}>No inactive challenges</p>
-            ) : (
+              <h2>Create New Challenge</h2>
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: "15px" }}
+              >
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontWeight: "bold",
+                      marginBottom: "5px",
+                    }}
+                  >
+                    Challenge Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                    placeholder="e.g., Plank Challenge #3"
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "5px",
+                      border: "1px solid #ddd",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontWeight: "bold",
+                      marginBottom: "5px",
+                    }}
+                  >
+                    Description *
+                  </label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
+                    placeholder="e.g., Hold a plank position for increasing durations"
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "5px",
+                      border: "1px solid #ddd",
+                      minHeight: "80px",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontWeight: "bold",
+                      marginBottom: "5px",
+                    }}
+                  >
+                    Type
+                  </label>
+                  <select
+                    value={formData.type}
+                    onChange={(e) =>
+                      setFormData({ ...formData, type: e.target.value })
+                    }
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "5px",
+                      border: "1px solid #ddd",
+                    }}
+                  >
+                    <option value="plank">Plank (seconds)</option>
+                    <option value="squat">Squat (reps)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontWeight: "bold",
+                      marginBottom: "5px",
+                    }}
+                  >
+                    Start Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.startDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, startDate: e.target.value })
+                    }
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "5px",
+                      border: "1px solid #ddd",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontWeight: "bold",
+                      marginBottom: "5px",
+                    }}
+                  >
+                    Number of Days
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.numberOfDays}
+                    onChange={(e) =>
+                      setFormData({ ...formData, numberOfDays: e.target.value })
+                    }
+                    min="1"
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "5px",
+                      border: "1px solid #ddd",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontWeight: "bold",
+                      marginBottom: "5px",
+                    }}
+                  >
+                    Starting Value ({formData.type === "plank" ? "seconds" : "reps"}
+                    )
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.startingValue}
+                    onChange={(e) =>
+                      setFormData({ ...formData, startingValue: e.target.value })
+                    }
+                    min="1"
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "5px",
+                      border: "1px solid #ddd",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontWeight: "bold",
+                      marginBottom: "5px",
+                    }}
+                  >
+                    Increment Per Day
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.incrementPerDay}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        incrementPerDay: e.target.value,
+                      })
+                    }
+                    min="0"
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "5px",
+                      border: "1px solid #ddd",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={formData.isActive}
+                      onChange={(e) =>
+                        setFormData({ ...formData, isActive: e.target.checked })
+                      }
+                    />
+                    <span style={{ fontWeight: "bold" }}>
+                      Active (visible to users)
+                    </span>
+                  </label>
+                </div>
+
+                <div>
+                  <button
+                    onClick={handleCreateChallenge}
+                    style={{
+                      padding: "12px",
+                      fontSize: "16px",
+                      backgroundColor: "#4CAF50",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "5px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Create Challenge
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* EDIT FORM (full-screen modal) */}
+          {editingChallenge && (
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0,0,0,0.7)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 1000,
+                padding: "20px",
+              }}
+            >
               <div
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "15px",
+                  backgroundColor: "white",
+                  padding: "30px",
+                  borderRadius: "8px",
+                  maxHeight: "90vh",
+                  overflowY: "auto",
+                  maxWidth: "600px",
+                  width: "100%",
                 }}
               >
-                {challenges
-                  .filter((c) => !c.isActive)
-                  .map((challenge) => (
-                    <div
-                      key={challenge.id}
+                <h2>Edit Challenge</h2>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "15px",
+                    marginTop: "10px",
+                  }}
+                >
+                  <div>
+                    <label
                       style={{
-                        backgroundColor: "#f0f0f0",
-                        padding: "20px",
-                        borderRadius: "8px",
-                        opacity: 0.7,
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+                        display: "block",
+                        fontWeight: "bold",
+                        marginBottom: "5px",
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                        }}
-                      >
-                        <div>
-                          <h3
+                      Challenge Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={editingChallenge.name}
+                      onChange={(e) =>
+                        setEditingChallenge({
+                          ...editingChallenge,
+                          name: e.target.value,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "10px",
+                        borderRadius: "5px",
+                        border: "1px solid #ddd",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontWeight: "bold",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      Description *
+                    </label>
+                    <textarea
+                      value={editingChallenge.description}
+                      onChange={(e) =>
+                        setEditingChallenge({
+                          ...editingChallenge,
+                          description: e.target.value,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "10px",
+                        borderRadius: "5px",
+                        border: "1px solid #ddd",
+                        minHeight: "80px",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontWeight: "bold",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      Type
+                    </label>
+                    <select
+                      value={editingChallenge.type}
+                      onChange={(e) =>
+                        setEditingChallenge({
+                          ...editingChallenge,
+                          type: e.target.value,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "10px",
+                        borderRadius: "5px",
+                        border: "1px solid #ddd",
+                      }}
+                    >
+                      <option value="plank">Plank (seconds)</option>
+                      <option value="squat">Squat (reps)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontWeight: "bold",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      Start Date *
+                    </label>
+                    <input
+                      type="date"
+                      value={editingChallenge.startDate}
+                      onChange={(e) =>
+                        setEditingChallenge({
+                          ...editingChallenge,
+                          startDate: e.target.value,
+                        })
+                      }
+                      style={{
+                        width: "100%",
+                        padding: "10px",
+                        borderRadius: "5px",
+                        border: "1px solid #ddd",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontWeight: "bold",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      Number of Days
+                    </label>
+                    <input
+                      type="number"
+                      value={editingChallenge.numberOfDays}
+                      onChange={(e) =>
+                        setEditingChallenge({
+                          ...editingChallenge,
+                          numberOfDays: parseInt(e.target.value, 10),
+                        })
+                      }
+                      min="1"
+                      style={{
+                        width: "100%",
+                        padding: "10px",
+                        borderRadius: "5px",
+                        border: "1px solid #ddd",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontWeight: "bold",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      Starting Value (
+                      {editingChallenge.type === "plank" ? "seconds" : "reps"})
+                    </label>
+                    <input
+                      type="number"
+                      value={editingChallenge.startingValue}
+                      onChange={(e) =>
+                        setEditingChallenge({
+                          ...editingChallenge,
+                          startingValue: parseInt(e.target.value, 10),
+                        })
+                      }
+                      min="1"
+                      style={{
+                        width: "100%",
+                        padding: "10px",
+                        borderRadius: "5px",
+                        border: "1px solid #ddd",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontWeight: "bold",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      Increment Per Day
+                    </label>
+                    <input
+                      type="number"
+                      value={editingChallenge.incrementPerDay}
+                      onChange={(e) =>
+                        setEditingChallenge({
+                          ...editingChallenge,
+                          incrementPerDay: parseInt(e.target.value, 10),
+                        })
+                      }
+                      min="0"
+                      style={{
+                        width: "100%",
+                        padding: "10px",
+                        borderRadius: "5px",
+                        border: "1px solid #ddd",
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      marginTop: "10px",
+                    }}
+                  >
+                    <button
+                      onClick={handleSaveEdit}
+                      style={{
+                        flex: 1,
+                        padding: "12px",
+                        fontSize: "16px",
+                        backgroundColor: "#4CAF50",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "5px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Save Changes
+                    </button>
+                    <button
+                      onClick={() => setEditingChallenge(null)}
+                      style={{
+                        flex: 1,
+                        padding: "12px",
+                        fontSize: "16px",
+                        backgroundColor: "#999",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "5px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* CONFIRMATION MODAL */}
+          {confirmAction && (
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0,0,0,0.7)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 2000,
+                padding: "20px",
+              }}
+            >
+              <div
+                style={{
+                  backgroundColor: "white",
+                  padding: "30px",
+                  borderRadius: "8px",
+                  maxWidth: "500px",
+                  width: "100%",
+                }}
+              >
+                <h2>
+                  {confirmAction.type === "reset"
+                    ? "Reset Challenge"
+                    : "Confirm Action"}
+                </h2>
+                <p
+                  style={{
+                    fontSize: "16px",
+                    marginBottom: "20px",
+                    color: "#333",
+                  }}
+                >
+                  {confirmAction.message}
+                </p>
+
+                {confirmAction.type === "reset" && (
+                  <div style={{ marginBottom: "20px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontWeight: "bold",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Type RESET to confirm
+                    </label>
+                    <input
+                      type="text"
+                      value={resetConfirmText}
+                      onChange={(e) => setResetConfirmText(e.target.value)}
+                      placeholder="Type RESET"
+                      style={{
+                        width: "100%",
+                        padding: "10px",
+                        borderRadius: "5px",
+                        border: "1px solid #ddd",
+                        fontSize: "14px",
+                      }}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button
+                    onClick={() => {
+                      if (confirmAction.type === "confirmEdit") {
+                        confirmEdit();
+                      } else if (confirmAction.type === "deactivate") {
+                        confirmDeactivate(confirmAction.challengeId);
+                      } else if (confirmAction.type === "delete") {
+                        confirmDelete(confirmAction.challengeId);
+                      } else if (confirmAction.type === "reset") {
+                        confirmReset(confirmAction.challengeId);
+                      }
+                    }}
+                    disabled={
+                      confirmAction.type === "reset" && resetConfirmText !== "RESET"
+                    }
+                    style={{
+                      flex: 1,
+                      padding: "12px",
+                      fontSize: "16px",
+                      backgroundColor:
+                        confirmAction.type === "delete" ||
+                        confirmAction.type === "reset"
+                          ? "#d32f2f"
+                          : "#4CAF50",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "5px",
+                      cursor:
+                        confirmAction.type === "reset" &&
+                        resetConfirmText !== "RESET"
+                          ? "not-allowed"
+                          : "pointer",
+                      opacity:
+                        confirmAction.type === "reset" &&
+                        resetConfirmText !== "RESET"
+                          ? 0.5
+                          : 1,
+                    }}
+                  >
+                    {confirmAction.type === "confirmEdit"
+                      ? "Save Changes"
+                      : confirmAction.type === "deactivate"
+                      ? "Deactivate"
+                      : confirmAction.type === "delete"
+                      ? "Delete"
+                      : "Confirm"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConfirmAction(null);
+                      setResetConfirmText("");
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "12px",
+                      fontSize: "16px",
+                      backgroundColor: "#999",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "5px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* CHALLENGES LIST */}
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "40px" }}>
+              <p>Loading challenges...</p>
+            </div>
+          ) : challenges.length === 0 ? (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "40px",
+                backgroundColor: "white",
+                borderRadius: "8px",
+              }}
+            >
+              <p style={{ color: "#999" }}>
+                No challenges yet. Create one to get started!
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* ACTIVE CHALLENGES */}
+              <div>
+                <h2 style={{ marginTop: "30px", marginBottom: "15px" }}>
+                  Active Challenges
+                </h2>
+                {challenges.filter((c) => c.isActive).length === 0 ? (
+                  <p style={{ color: "#999" }}>No active challenges</p>
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "15px",
+                    }}
+                  >
+                    {challenges
+                      .filter((c) => c.isActive)
+                      .map((challenge) => (
+                        <div
+                          key={challenge.id}
+                          style={{
+                            backgroundColor: "white",
+                            padding: "20px",
+                            borderRadius: "8px",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                          }}
+                        >
+                          <div
                             style={{
-                              margin: "0 0 5px 0",
-                              color: "#666",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "flex-start",
                             }}
                           >
-                            {challenge.name}
-                          </h3>
-                          <span style={{ color: "#999", fontSize: "14px" }}>
-                            {challenge.userCount} users
-                          </span>
+                            <div>
+                              <h3 style={{ margin: "0 0 5px 0" }}>
+                                {challenge.name}
+                              </h3>
+                              <span style={{ color: "#999", fontSize: "14px" }}>
+                                {challenge.userCount} users
+                              </span>
+                            </div>
+                          </div>
+                          <p
+                            style={{
+                              margin: "5px 0",
+                              color: "#666",
+                              fontSize: "14px",
+                            }}
+                          >
+                            {challenge.numberOfDays} days • Starts{" "}
+                            {challenge.startDate?.toDate
+                              ? challenge.startDate.toDate().toLocaleDateString()
+                              : ""}
+                          </p>
+                          <p
+                            style={{
+                              margin: "5px 0",
+                              color: "#666",
+                              fontSize: "14px",
+                            }}
+                          >
+                            {challenge.description}
+                          </p>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "8px",
+                              marginTop: "15px",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <button
+                              onClick={() => handleEditClick(challenge)}
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: "14px",
+                                backgroundColor: "#2196F3",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeactivate(challenge)}
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: "14px",
+                                backgroundColor: "#FF9800",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Deactivate
+                            </button>
+                            <button
+                              onClick={() => handleReset(challenge)}
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: "14px",
+                                backgroundColor: "#FF5722",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Reset Challenge
+                            </button>
+                            <button
+                              onClick={() => handleDelete(challenge)}
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: "14px",
+                                backgroundColor: "#d32f2f",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              onClick={() =>
+                                loadMissedDaysForChallenge(challenge.id)
+                              }
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: "14px",
+                                backgroundColor: "#6A1B9A",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              View Missed Days
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <p
-                        style={{
-                          margin: "5px 0",
-                          color: "#999",
-                          fontSize: "14px",
-                        }}
-                      >
-                        INACTIVE
-                      </p>
-                      <p
-                        style={{
-                          margin: "5px 0",
-                          color: "#999",
-                          fontSize: "14px",
-                        }}
-                      >
-                        {challenge.numberOfDays} days • Starts{" "}
-                        {challenge.startDate?.toDate
-                          ? challenge.startDate.toDate().toLocaleDateString()
-                          : ""}
-                      </p>
-                      <p
-                        style={{
-                          margin: "5px 0",
-                          color: "#999",
-                          fontSize: "14px",
-                        }}
-                      >
-                        {challenge.description}
-                      </p>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "8px",
-                          marginTop: "15px",
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <button
-                          onClick={() => handleEditClick(challenge)}
-                          style={{
-                            padding: "8px 12px",
-                            fontSize: "14px",
-                            backgroundColor: "#2196F3",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeactivate(challenge)}
-                          style={{
-                            padding: "8px 12px",
-                            fontSize: "14px",
-                            backgroundColor: "#4CAF50",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Activate
-                        </button>
-                        <button
-                          onClick={() => handleDelete(challenge)}
-                          style={{
-                            padding: "8px 12px",
-                            fontSize: "14px",
-                            backgroundColor: "#d32f2f",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Delete
-                        </button>
-                        <button
-                          onClick={() =>
-                            loadMissedDaysForChallenge(challenge.id)
-                          }
-                          style={{
-                            padding: "8px 12px",
-                            fontSize: "14px",
-                            backgroundColor: "#6A1B9A",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          View Missed Days
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                      ))}
+                  </div>
+                )}
               </div>
+
+              {/* INACTIVE CHALLENGES */}
+              <div>
+                <h2
+                  style={{
+                    marginTop: "40px",
+                    marginBottom: "15px",
+                    color: "#999",
+                  }}
+                >
+                  Inactive Challenges
+                </h2>
+                {challenges.filter((c) => !c.isActive).length === 0 ? (
+                  <p style={{ color: "#999" }}>No inactive challenges</p>
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "15px",
+                    }}
+                  >
+                    {challenges
+                      .filter((c) => !c.isActive)
+                      .map((challenge) => (
+                        <div
+                          key={challenge.id}
+                          style={{
+                            backgroundColor: "#f0f0f0",
+                            padding: "20px",
+                            borderRadius: "8px",
+                            opacity: 0.7,
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "flex-start",
+                            }}
+                          >
+                            <div>
+                              <h3
+                                style={{
+                                  margin: "0 0 5px 0",
+                                  color: "#666",
+                                }}
+                              >
+                                {challenge.name}
+                              </h3>
+                              <span style={{ color: "#999", fontSize: "14px" }}>
+                                {challenge.userCount} users
+                              </span>
+                            </div>
+                          </div>
+                          <p
+                            style={{
+                              margin: "5px 0",
+                              color: "#999",
+                              fontSize: "14px",
+                            }}
+                          >
+                            INACTIVE
+                          </p>
+                          <p
+                            style={{
+                              margin: "5px 0",
+                              color: "#999",
+                              fontSize: "14px",
+                            }}
+                          >
+                            {challenge.numberOfDays} days • Starts{" "}
+                            {challenge.startDate?.toDate
+                              ? challenge.startDate.toDate().toLocaleDateString()
+                              : ""}
+                          </p>
+                          <p
+                            style={{
+                              margin: "5px 0",
+                              color: "#999",
+                              fontSize: "14px",
+                            }}
+                          >
+                            {challenge.description}
+                          </p>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "8px",
+                              marginTop: "15px",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <button
+                              onClick={() => handleEditClick(challenge)}
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: "14px",
+                                backgroundColor: "#2196F3",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeactivate(challenge)}
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: "14px",
+                                backgroundColor: "#4CAF50",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Activate
+                            </button>
+                            <button
+                              onClick={() => handleDelete(challenge)}
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: "14px",
+                                backgroundColor: "#d32f2f",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              onClick={() =>
+                                loadMissedDaysForChallenge(challenge.id)
+                              }
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: "14px",
+                                backgroundColor: "#6A1B9A",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              View Missed Days
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* MISSED DAYS TABLE */}
+          <div
+            style={{
+              marginTop: "40px",
+              padding: "20px",
+              backgroundColor: "white",
+              borderRadius: "8px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+            }}
+          >
+            <h2>Missed Days (Selected Challenge)</h2>
+            {missedLoading ? (
+              <p>Loading missed days...</p>
+            ) : Object.keys(missedByDay).length === 0 ? (
+              <p style={{ color: "#999" }}>
+                Click "View Missed Days" on a challenge above to see details.
+              </p>
+            ) : (
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  marginTop: "10px",
+                  fontSize: "14px",
+                }}
+              >
+                <thead>
+                  <tr>
+                    <th
+                      style={{
+                        textAlign: "left",
+                        padding: "8px",
+                        borderBottom: "1px solid #ddd",
+                      }}
+                    >
+                      Day
+                    </th>
+                    <th
+                      style={{
+                        textAlign: "left",
+                        padding: "8px",
+                        borderBottom: "1px solid #ddd",
+                      }}
+                    >
+                      Users Who Missed
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(missedByDay)
+                    .sort((a, b) => Number(a[0]) - Number(b[0]))
+                    .map(([day, users]) => (
+                      <tr key={day}>
+                        <td
+                          style={{
+                            padding: "8px",
+                            borderBottom: "1px solid #eee",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Day {day}
+                        </td>
+                        <td
+                          style={{
+                            padding: "8px",
+                            borderBottom: "1px solid #eee",
+                          }}
+                        >
+                          {users
+                            .map((u) => (u.displayName ? u.displayName : u.userId))
+                            .join(", ")}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
             )}
           </div>
         </>
       )}
-
-      {/* MISSED DAYS TABLE */}
-      <div
-        style={{
-          marginTop: "40px",
-          padding: "20px",
-          backgroundColor: "white",
-          borderRadius: "8px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-        }}
-      >
-        <h2>Missed Days (Selected Challenge)</h2>
-        {missedLoading ? (
-          <p>Loading missed days...</p>
-        ) : Object.keys(missedByDay).length === 0 ? (
-          <p style={{ color: "#999" }}>
-            Click "View Missed Days" on a challenge above to see details.
-          </p>
-        ) : (
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              marginTop: "10px",
-              fontSize: "14px",
-            }}
-          >
-            <thead>
-              <tr>
-                <th
-                  style={{
-                    textAlign: "left",
-                    padding: "8px",
-                    borderBottom: "1px solid #ddd",
-                  }}
-                >
-                  Day
-                </th>
-                <th
-                  style={{
-                    textAlign: "left",
-                    padding: "8px",
-                    borderBottom: "1px solid #ddd",
-                  }}
-                >
-                  Users Who Missed
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(missedByDay)
-                .sort((a, b) => Number(a[0]) - Number(b[0]))
-                .map(([day, users]) => (
-                  <tr key={day}>
-                    <td
-                      style={{
-                        padding: "8px",
-                        borderBottom: "1px solid #eee",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Day {day}
-                    </td>
-                    <td
-                      style={{
-                        padding: "8px",
-                        borderBottom: "1px solid #eee",
-                      }}
-                    >
-                      {users
-                        .map((u) => (u.displayName ? u.displayName : u.userId))
-                        .join(", ")}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        )}
-      </div>
     </div>
   );
 }
