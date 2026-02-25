@@ -377,7 +377,7 @@ export default function App() {
 
   // Show active challenge screen (PlankTimer or SquatLogger)
   if (activeChallengeData) {
-    const { challengeDetails, currentDay, userChallengeId, challengeId } =
+    const { challengeDetails, currentDay, userChallengeId, challengeId, teamId } =
       activeChallengeData;
 
     if (challengeDetails.type === "plank") {
@@ -393,7 +393,8 @@ export default function App() {
           challengeId={challengeId}
           userId={user.uid}
           user={user}
-          displayName={profileName || user.displayName || ""} // important
+          displayName={profileName || user.displayName || ""}
+          teamId={teamId || null}
           numberOfDays={challengeDetails.numberOfDays}
           onComplete={handleChallengeComplete}
           onCancel={handleChallengeCancel}
@@ -412,6 +413,7 @@ export default function App() {
           challengeId={challengeId}
           userId={user.uid}
           user={user}
+          teamId={teamId || null}
           numberOfDays={challengeDetails.numberOfDays}
           onComplete={handleChallengeComplete}
           onCancel={handleChallengeCancel}
