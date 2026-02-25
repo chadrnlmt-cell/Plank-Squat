@@ -18,7 +18,8 @@ export default function SquatLogger({
   challengeId,
   userId,
   user,
-  displayName, // NEW: profile name from App
+  displayName, // profile name from App
+  teamId, // NEW: pass teamId from parent
   numberOfDays,
   onComplete,
   onCancel,
@@ -61,13 +62,14 @@ export default function SquatLogger({
         status: isComplete ? "completed" : "active",
       });
 
-      // Only update stats on successful days, with overrideDisplayName
+      // Only update stats on successful days, with overrideDisplayName and teamId
       if (success) {
         await updateSquatStatsOnSuccess({
           user: user || { uid: userId },
           challengeId,
           actualReps: actualValue,
-          overrideDisplayName: displayName || undefined, // NEW
+          overrideDisplayName: displayName || undefined,
+          teamId: teamId || null, // NEW: pass teamId for caching
         });
       }
 
