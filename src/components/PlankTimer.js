@@ -359,7 +359,7 @@ export default function PlankTimer({
 
     // Redo requested - increment attempt number and return to Active tab
     onRedoUsed(); // Increment attempt number in App.js
-    onComplete(); // Return to Active tab
+    onComplete(true); // Pass true to indicate this is a redo (don't reset attemptNumber)
   };
 
   const handleLogAttempt = async (actualValue, success) => {
@@ -401,7 +401,7 @@ export default function PlankTimer({
 
       setStage("complete");
       setTimeout(() => {
-        onComplete();
+        onComplete(false); // Pass false - day actually completed, reset attemptNumber
       }, 2000);
     } catch (error) {
       console.error("Error logging attempt:", error);
@@ -426,11 +426,11 @@ export default function PlankTimer({
 
       // Don't advance day - they can try again tomorrow
       setTimeout(() => {
-        onComplete();
+        onComplete(false); // Pass false - day failed, reset attemptNumber
       }, 3000);
     } catch (error) {
       console.error("Error logging failed attempt:", error);
-      onComplete();
+      onComplete(false);
     }
   };
 
