@@ -70,6 +70,7 @@ export default function PlankTimer({
   const [stillGoingCountdown, setStillGoingCountdown] = useState(20); // 20 second countdown
   const [frozenTime, setFrozenTime] = useState(0); // Time when frozen (for Keep/Redo screen)
   const [showWakeLockWarning, setShowWakeLockWarning] = useState(false);
+  const [stillGoingStartTime, setStillGoingStartTime] = useState(null); // Track when prompt started
 
   const intervalRef = useRef(null);
   const recoveryIntervalRef = useRef(null);
@@ -127,6 +128,7 @@ export default function PlankTimer({
           clearInterval(intervalRef.current);
           setFrozenTime(total);
           setStillGoingCountdown(20);
+          setStillGoingStartTime(Date.now()); // Record when prompt started
           setStage("stillGoingPrompt");
           return;
         }
@@ -167,6 +169,9 @@ export default function PlankTimer({
           if (prev <= 1) {
             // Time's up - they missed it
             clearInterval(stillGoingIntervalRef.current);
+            // Calculate total time including the 20 seconds they took
+            const responseTime = Math.floor((Date.now() - stillGoingStartTime) / 1000);
+            setFrozenTime(frozenTime + responseTime);
             setStage("keepRedoScreen");
             return 0;
           }
@@ -184,7 +189,7 @@ export default function PlankTimer({
         clearInterval(stillGoingIntervalRef.current);
       }
     };
-  }, [stage]);
+  }, [stage, frozenTime, stillGoingStartTime]);
 
   // Keep/Redo screen timeout (20 seconds)
   useEffect(() => {
@@ -327,10 +332,13 @@ export default function PlankTimer({
   };
 
   const handleStillGoingPressed = () => {
-    // User confirmed they're still going - continue timer
+    // User confirmed they're still going - calculate actual elapsed time
+    const responseTime = Math.floor((Date.now() - stillGoingStartTime) / 1000);
+    const actualElapsed = frozenTime + responseTime;
+    
+    // Resume timer from actual elapsed time (frozen time + response time)
     setStage("active");
-    // Resume from frozen time
-    startTimeRef.current = Date.now() - frozenTime * 1000;
+    startTimeRef.current = Date.now() - actualElapsed * 1000;
   };
 
   const handleKeepTime = async () => {
@@ -357,6 +365,7 @@ export default function PlankTimer({
     setCurrentRecoveryTime(0);
     setHasPaused(false);
     setFrozenTime(0);
+    setStillGoingStartTime(null);
     setCountdown(3);
     setStage("countdown");
   };
@@ -494,18 +503,19 @@ export default function PlankTimer({
             right: "20px",
             backgroundColor: "#fbbf24",
             color: "#78350f",
-            padding: "12px 16px",
-            borderRadius: "8px",
-            fontSize: "14px",
+            padding: "30px 24px",
+            borderRadius: "12px",
+            fontSize: "20px",
             display: "flex",
             alignItems: "center",
-            gap: "8px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            gap: "12px",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
             animation: "fadeIn 0.3s ease-in",
             zIndex: 1001,
+            fontWeight: "600",
           }}
         >
-          <span style={{ fontSize: "18px" }}>⚠️</span>
+          <span style={{ fontSize: "28px" }}>⚠️</span>
           <span>
             Your browser may not support keeping the screen on. If your screen
             goes to sleep during the plank, the timer will pause automatically.
@@ -539,13 +549,20 @@ export default function PlankTimer({
           {redoCount > 0 && (
             <div
               style={{
-                fontSize: "16px",
+                fontSize: redoCount === 2 ? "40px" : "20px",
                 color: "var(--color-warning)",
-                marginBottom: "20px",
+                marginBottom: "40px",
+                padding: redoCount === 2 ? "30px" : "0",
+                backgroundColor: redoCount === 2 ? "rgba(251, 191, 36, 0.2)" : "transparent",
+                borderRadius: redoCount === 2 ? "12px" : "0",
+                fontWeight: redoCount === 2 ? "bold" : "normal",
               }}
             >
               {redoCount === 2 ? (
-                <strong>⚠️ Last attempt - this is your final try for today</strong>
+                <div>
+                  <div style={{ fontSize: "50px", marginBottom: "10px" }}>⚠️</div>
+                  <div>Last attempt - this is your final try for today</div>
+                </div>
               ) : (
                 `Attempt ${redoCount + 1} of 3`
               )}
@@ -684,54 +701,61 @@ export default function PlankTimer({
         </div>
       )}
 
-      {/* STILL GOING PROMPT */}
+      {/* STILL GOING PROMPT - Full Screen RED Button */}
       {stage === "stillGoingPrompt" && (
         <div
+          onClick={handleStillGoingPressed}
           style={{
-            textAlign: "center",
-            width: "100%",
-            maxWidth: "500px",
-            padding: "0 20px",
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#dc2626",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            zIndex: 1002,
           }}
         >
-          {/* Dimmed Timer */}
+          {/* Main Message */}
           <div
             style={{
-              fontSize: "80px",
+              fontSize: "48px",
               fontWeight: "bold",
-              color: "var(--color-text-secondary)",
+              color: "white",
               marginBottom: "40px",
-              opacity: 0.4,
+              textAlign: "center",
+              padding: "0 20px",
             }}
           >
-            {formatTime(frozenTime)}
+            Touch if Still Going
           </div>
 
           {/* Countdown */}
           <div
             style={{
-              fontSize: "24px",
-              color: "var(--color-warning)",
-              marginBottom: "30px",
-            }}
-          >
-            {stillGoingCountdown} seconds
-          </div>
-
-          {/* Large Button */}
-          <button
-            className="btn btn--primary"
-            onClick={handleStillGoingPressed}
-            style={{
-              fontSize: "32px",
-              padding: "30px 60px",
+              fontSize: "80px",
               fontWeight: "bold",
-              width: "100%",
-              maxWidth: "400px",
+              color: "white",
+              textAlign: "center",
             }}
           >
-            Still Going! 💪
-          </button>
+            {stillGoingCountdown}
+          </div>
+          
+          <div
+            style={{
+              fontSize: "24px",
+              color: "white",
+              marginTop: "10px",
+              opacity: 0.9,
+            }}
+          >
+            seconds
+          </div>
         </div>
       )}
 
