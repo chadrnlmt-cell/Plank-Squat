@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
 import { collection, addDoc, getDocs, query, where, Timestamp } from "firebase/firestore";
 
-export default function ChallengeCard({ challenge, onJoin }) {
+export default function ChallengeCard({ challenge, onJoin, alreadyJoined }) {
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState("");
   const [showTeamSelect, setShowTeamSelect] = useState(false);
@@ -76,14 +76,42 @@ export default function ChallengeCard({ challenge, onJoin }) {
     <>
       <div
         style={{
-          backgroundColor: "white",
+          backgroundColor: alreadyJoined ? "#e8f5e9" : "white",
           borderRadius: "8px",
           padding: "20px",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+          boxShadow: alreadyJoined
+            ? "0 2px 8px rgba(76, 175, 80, 0.3)"
+            : "0 2px 8px rgba(0,0,0,0.1)",
           marginBottom: "15px",
+          border: alreadyJoined ? "2px solid #4CAF50" : "none",
+          position: "relative",
         }}
       >
-        <h3 style={{ margin: "0 0 10px 0", color: "#333" }}>
+        {/* Fun "Already Joined" badge */}
+        {alreadyJoined && (
+          <div
+            style={{
+              position: "absolute",
+              top: "12px",
+              right: "12px",
+              backgroundColor: "#4CAF50",
+              color: "white",
+              padding: "6px 12px",
+              borderRadius: "20px",
+              fontSize: "13px",
+              fontWeight: "bold",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+            }}
+          >
+            <span style={{ fontSize: "16px" }}>✓</span>
+            You're In!
+          </div>
+        )}
+
+        <h3 style={{ margin: "0 0 10px 0", color: "#333", paddingRight: alreadyJoined ? "110px" : "0" }}>
           {challenge.name}
           {isTeamChallenge && (
             <span
@@ -91,7 +119,7 @@ export default function ChallengeCard({ challenge, onJoin }) {
                 marginLeft: "8px",
                 fontSize: "12px",
                 padding: "2px 8px",
-                backgroundColor: "#4CAF50",
+                backgroundColor: alreadyJoined ? "#2E7D32" : "#4CAF50",
                 color: "white",
                 borderRadius: "4px",
               }}
@@ -106,21 +134,48 @@ export default function ChallengeCard({ challenge, onJoin }) {
         <p style={{ margin: "5px 0", color: "#999", fontSize: "13px" }}>
           {challenge.numberOfDays} days • Starts {startDateDisplay}
         </p>
-        <button
-          onClick={handleJoinClick}
-          style={{
-            marginTop: "15px",
-            padding: "10px 20px",
-            fontSize: "16px",
-            backgroundColor: "#4CAF50",
-            color: "white",
-            border: "none",
-            borderRadius: "5px",
-            cursor: "pointer",
-          }}
-        >
-          Join Challenge
-        </button>
+
+        {alreadyJoined ? (
+          <div
+            style={{
+              marginTop: "15px",
+              padding: "12px 20px",
+              fontSize: "16px",
+              backgroundColor: "#4CAF50",
+              color: "white",
+              borderRadius: "5px",
+              textAlign: "center",
+              fontWeight: "600",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+            }}
+          >
+            <span style={{ fontSize: "20px" }}>🎉</span>
+            Already Joined! Check the Active tab
+            <span style={{ fontSize: "20px" }}>🎉</span>
+          </div>
+        ) : (
+          <button
+            onClick={handleJoinClick}
+            style={{
+              marginTop: "15px",
+              padding: "10px 20px",
+              fontSize: "16px",
+              backgroundColor: "#4CAF50",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+              cursor: "pointer",
+              transition: "background-color 0.2s",
+            }}
+            onMouseEnter={(e) => (e.target.style.backgroundColor = "#45a049")}
+            onMouseLeave={(e) => (e.target.style.backgroundColor = "#4CAF50")}
+          >
+            Join Challenge
+          </button>
+        )}
       </div>
 
       {/* TEAM SELECTION MODAL - Only shown for team challenges */}
