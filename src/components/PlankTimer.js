@@ -119,10 +119,10 @@ export default function PlankTimer({
         const total = Math.floor((now - startTimeRef.current) / 1000);
         setElapsed(total);
 
-        // Check for "Still Going?" prompts (at 5min, then every 2min)
+        // Check for "Still Going?" prompts (at 5min, then every 2min AFTER 5min)
         const shouldPrompt = 
           (total === 300) || // 5 minutes
-          (total > 300 && total % 120 === 0); // Every 2 minutes after 5min
+          (total > 300 && (total - 300) % 120 === 0); // Every 2 minutes AFTER the 5min mark (7, 9, 11...)
         
         if (shouldPrompt) {
           clearInterval(intervalRef.current);
@@ -167,11 +167,9 @@ export default function PlankTimer({
       stillGoingIntervalRef.current = setInterval(() => {
         setStillGoingCountdown((prev) => {
           if (prev <= 1) {
-            // Time's up - they missed it
+            // Time's up - they missed it - DON'T add the 20 seconds penalty
             clearInterval(stillGoingIntervalRef.current);
-            // Calculate total time including the 20 seconds they took
-            const responseTime = Math.floor((Date.now() - stillGoingStartTime) / 1000);
-            setFrozenTime(frozenTime + responseTime);
+            // Just use the frozen time without adding response time
             setStage("keepRedoScreen");
             return 0;
           }
@@ -189,7 +187,7 @@ export default function PlankTimer({
         clearInterval(stillGoingIntervalRef.current);
       }
     };
-  }, [stage, frozenTime, stillGoingStartTime]);
+  }, [stage]);
 
   // Keep/Redo screen timeout (20 seconds)
   useEffect(() => {
@@ -238,9 +236,11 @@ export default function PlankTimer({
     let isMounted = true;
 
     const ensureWakeLock = async () => {
-      // Only try to keep screen on while plank is actually running or showing prompts
+      // Keep screen on during all these stages
       if (
+        stage === "countdown" ||
         stage === "active" || 
+        stage === "paused" ||
         stage === "autoStopping" || 
         stage === "stillGoingPrompt" ||
         stage === "keepRedoScreen"
@@ -252,7 +252,7 @@ export default function PlankTimer({
           }
         }
       } else {
-        // For countdown, paused, complete, failed, or when leaving:
+        // For complete, failed, or when leaving:
         if (wakeLockRef.current) {
           try {
             await wakeLockRef.current.release();
@@ -273,7 +273,9 @@ export default function PlankTimer({
       if (
         hasWakeLockApi &&
         document.visibilityState === "visible" &&
-        (stage === "active" || 
+        (stage === "countdown" ||
+         stage === "active" || 
+         stage === "paused" ||
          stage === "autoStopping" || 
          stage === "stillGoingPrompt" ||
          stage === "keepRedoScreen") &&
