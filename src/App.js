@@ -30,6 +30,9 @@ export default function App() {
   const [challenges, setChallenges] = useState([]);
   const [userChallenges, setUserChallenges] = useState([]);
   const [activeChallengeData, setActiveChallengeData] = useState(null);
+  
+  // Track attempt number for current day (1-3, where 1 is original attempt)
+  const [attemptNumber, setAttemptNumber] = useState(1);
 
   // NEW: app-level profile name from Firestore users/<uid>
   const [profileName, setProfileName] = useState("");
@@ -293,6 +296,7 @@ export default function App() {
       setUserChallenges([]);
       setActiveTab("available");
       setProfileName("");
+      setAttemptNumber(1);
     } catch (error) {
       console.error("Error signing out:", error);
     }
@@ -378,11 +382,18 @@ export default function App() {
 
   const handleChallengeComplete = async () => {
     setActiveChallengeData(null);
+    setAttemptNumber(1); // Reset attempt counter
     await loadUserChallenges();
   };
 
   const handleChallengeCancel = () => {
     setActiveChallengeData(null);
+    setAttemptNumber(1); // Reset attempt counter on cancel
+  };
+
+  const handleRedoUsed = () => {
+    // Increment attempt number when redo is used
+    setAttemptNumber((prev) => prev + 1);
   };
 
   // Show active challenge screen (PlankTimer or SquatLogger)
@@ -406,8 +417,10 @@ export default function App() {
           displayName={profileName || user.displayName || ""}
           teamId={teamId || null}
           numberOfDays={challengeDetails.numberOfDays}
+          attemptNumber={attemptNumber}
           onComplete={handleChallengeComplete}
           onCancel={handleChallengeCancel}
+          onRedoUsed={handleRedoUsed}
         />
       );
     } else if (challengeDetails.type === "squat") {
@@ -586,6 +599,7 @@ export default function App() {
                   .map((userChallenge) => {
                     const canStart = canStartToday(userChallenge);
                     const missedCount = userChallenge.missedDaysCount || 0;
+                    const redosRemaining = 3 - attemptNumber;
 
                     return (
                       <div
@@ -611,6 +625,22 @@ export default function App() {
                           Missed days: {missedCount}
                         </p>
 
+                        {attemptNumber > 1 && canStart && (
+                          <p 
+                            style={{ 
+                              margin: "10px 0 5px 0", 
+                              color: attemptNumber === 3 ? "#d32f2f" : "#f57c00",
+                              fontWeight: "bold",
+                              fontSize: "14px"
+                            }}
+                          >
+                            {attemptNumber === 3 
+                              ? "⚠️ Final attempt remaining"
+                              : `${redosRemaining} ${redosRemaining === 1 ? "redo" : "redos"} remaining`
+                            }
+                          </p>
+                        )}
+
                         {canStart ? (
                           <button
                             onClick={() => handleStartChallenge(userChallenge)}
@@ -626,6 +656,7 @@ export default function App() {
                             }}
                           >
                             Start Day {userChallenge.currentDay}
+                            {attemptNumber > 1 && ` (Attempt ${attemptNumber})`}
                           </button>
                         ) : (
                           <div
