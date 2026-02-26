@@ -380,9 +380,12 @@ export default function App() {
     setActiveChallengeData(userChallenge);
   };
 
-  const handleChallengeComplete = async () => {
+  const handleChallengeComplete = async (isRedo = false) => {
     setActiveChallengeData(null);
-    setAttemptNumber(1); // Reset attempt counter
+    // Only reset attempt counter if it's NOT a redo (i.e., day actually completed or failed)
+    if (!isRedo) {
+      setAttemptNumber(1);
+    }
     await loadUserChallenges();
   };
 
