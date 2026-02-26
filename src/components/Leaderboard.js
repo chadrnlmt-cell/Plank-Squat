@@ -14,6 +14,7 @@ export default function Leaderboard({ user, challenges }) {
   const [selectedTeamFilter, setSelectedTeamFilter] = useState("all"); // "all" or teamId
   const [teamStandings, setTeamStandings] = useState([]);
   const [lastFetched, setLastFetched] = useState(null); // timestamp of last fetch
+  const [teamViewMode, setTeamViewMode] = useState("total"); // "total" | "average"
 
   // Cache refs
   const cacheRef = useRef({
@@ -147,6 +148,8 @@ export default function Leaderboard({ user, challenges }) {
               ...t,
               teamName: team?.name || "Unknown Team",
               teamColor: team?.color || "#999",
+              avgSeconds: t.memberCount > 0 ? Math.round(t.totalSeconds / t.memberCount) : 0,
+              avgReps: t.memberCount > 0 ? Math.round(t.totalReps / t.memberCount) : 0,
             };
           });
 
@@ -245,11 +248,17 @@ export default function Leaderboard({ user, challenges }) {
   const topTotal = [...filteredEntries].sort(compareTotals).slice(0, 10);
   const topBest = [...filteredEntries].sort(compareBests).slice(0, 5);
 
-  // Sort team standings
+  // Sort team standings based on view mode
   const sortedTeamStandings = [...teamStandings].sort((a, b) => {
-    const aVal = isPlank ? a.totalSeconds : a.totalReps;
-    const bVal = isPlank ? b.totalSeconds : b.totalReps;
-    return bVal - aVal;
+    if (teamViewMode === "average") {
+      const aVal = isPlank ? a.avgSeconds : a.avgReps;
+      const bVal = isPlank ? b.avgSeconds : b.avgReps;
+      return bVal - aVal;
+    } else {
+      const aVal = isPlank ? a.totalSeconds : a.totalReps;
+      const bVal = isPlank ? b.totalSeconds : b.totalReps;
+      return bVal - aVal;
+    }
   });
 
   const formatSeconds = (sec) => {
@@ -391,7 +400,44 @@ export default function Leaderboard({ user, challenges }) {
           {/* TEAM STANDINGS - Only show for team challenges */}
           {isTeamChallenge && teamStandings.length > 0 && (
             <div>
-              <h3 style={{ marginBottom: "8px" }}>Team Standings</h3>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <h3 style={{ margin: 0 }}>Team Standings</h3>
+                
+                {/* View Mode Toggle */}
+                <div style={{ display: "flex", gap: "4px", backgroundColor: "#f0f0f0", padding: "2px", borderRadius: "6px" }}>
+                  <button
+                    onClick={() => setTeamViewMode("total")}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "12px",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      backgroundColor: teamViewMode === "total" ? "#4CAF50" : "transparent",
+                      color: teamViewMode === "total" ? "white" : "#666",
+                      fontWeight: teamViewMode === "total" ? "bold" : "normal",
+                    }}
+                  >
+                    Total
+                  </button>
+                  <button
+                    onClick={() => setTeamViewMode("average")}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "12px",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      backgroundColor: teamViewMode === "average" ? "#4CAF50" : "transparent",
+                      color: teamViewMode === "average" ? "white" : "#666",
+                      fontWeight: teamViewMode === "average" ? "bold" : "normal",
+                    }}
+                  >
+                    Average
+                  </button>
+                </div>
+              </div>
+
               <div
                 style={{
                   borderRadius: "8px",
@@ -442,15 +488,15 @@ export default function Leaderboard({ user, challenges }) {
                           padding: "8px",
                         }}
                       >
-                        Total
+                        {teamViewMode === "total" ? "Total" : "Avg/Member"}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {sortedTeamStandings.map((team, idx) => {
-                      const totalVal = isPlank
-                        ? team.totalSeconds
-                        : team.totalReps;
+                      const displayVal = teamViewMode === "total"
+                        ? (isPlank ? team.totalSeconds : team.totalReps)
+                        : (isPlank ? team.avgSeconds : team.avgReps);
                       return (
                         <tr
                           key={team.teamId}
@@ -498,7 +544,7 @@ export default function Leaderboard({ user, challenges }) {
                               textAlign: "right",
                             }}
                           >
-                            {isPlank ? formatSeconds(totalVal) : totalVal}
+                            {isPlank ? formatSeconds(displayVal) : displayVal}
                           </td>
                         </tr>
                       );
