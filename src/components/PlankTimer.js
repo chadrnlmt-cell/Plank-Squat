@@ -51,8 +51,10 @@ export default function PlankTimer({
   displayName,
   teamId,
   numberOfDays,
+  attemptNumber, // 1, 2, or 3
   onComplete,
   onCancel,
+  onRedoUsed,
 }) {
   const [stage, setStage] = useState("countdown"); 
   // Stages: countdown | active | paused | autoStopping | stillGoingPrompt | keepRedoScreen | complete | failed
@@ -66,7 +68,6 @@ export default function PlankTimer({
   const [pausedElapsed, setPausedElapsed] = useState(0);
 
   // Anti-cheating states
-  const [redoCount, setRedoCount] = useState(0); // Track number of redos used (max 2)
   const [stillGoingCountdown, setStillGoingCountdown] = useState(20); // 20 second countdown
   const [frozenTime, setFrozenTime] = useState(0); // Time when frozen (for Keep/Redo screen)
   const [showWakeLockWarning, setShowWakeLockWarning] = useState(false);
@@ -193,7 +194,7 @@ export default function PlankTimer({
   useEffect(() => {
     if (stage === "keepRedoScreen") {
       const timer = setTimeout(() => {
-        // Timeout - treat as a redo used, discard time
+        // Timeout - same behavior as clicking redo
         handleRedoAttempt();
       }, 20000);
       return () => clearTimeout(timer);
@@ -349,27 +350,16 @@ export default function PlankTimer({
   };
 
   const handleRedoAttempt = () => {
-    if (redoCount >= 2) {
-      // Already used 2 redos (3 attempts total), can't redo anymore
-      // Go back to challenge list
-      onComplete();
+    if (attemptNumber >= 3) {
+      // Already on 3rd attempt, no more redos
+      // Log as failed and return to Active tab
+      handleFailedAttempt();
       return;
     }
 
-    // Increment redo count and reset everything
-    setRedoCount(redoCount + 1);
-    
-    // Reset all states to initial
-    setElapsed(0);
-    setPausedElapsed(0);
-    setTotalRecoveryUsed(0);
-    setCurrentPauseStart(null);
-    setCurrentRecoveryTime(0);
-    setHasPaused(false);
-    setFrozenTime(0);
-    setStillGoingStartTime(null);
-    setCountdown(3);
-    setStage("countdown");
+    // Redo requested - increment attempt number and return to Active tab
+    onRedoUsed(); // Increment attempt number in App.js
+    onComplete(); // Return to Active tab
   };
 
   const handleLogAttempt = async (actualValue, success) => {
@@ -420,7 +410,7 @@ export default function PlankTimer({
   };
 
   const handleFailedAttempt = async () => {
-    // Recovery expired - log failed attempt
+    // Recovery expired or 3rd attempt timeout - log failed attempt
     try {
       await addDoc(collection(db, "attempts"), {
         userId: userId,
@@ -428,7 +418,7 @@ export default function PlankTimer({
         challengeId: challengeId,
         day: day,
         targetValue: targetSeconds,
-        actualValue: elapsed,
+        actualValue: elapsed || frozenTime,
         success: false,
         missed: false,
         timestamp: Timestamp.fromDate(getPhoenixDate()),
@@ -548,25 +538,25 @@ export default function PlankTimer({
       {/* COUNTDOWN PHASE: Ready, Set, Go */}
       {stage === "countdown" && (
         <div style={{ textAlign: "center" }}>
-          {redoCount > 0 && (
+          {attemptNumber > 1 && (
             <div
               style={{
-                fontSize: redoCount === 2 ? "40px" : "20px",
+                fontSize: attemptNumber === 3 ? "40px" : "20px",
                 color: "var(--color-warning)",
                 marginBottom: "40px",
-                padding: redoCount === 2 ? "30px" : "0",
-                backgroundColor: redoCount === 2 ? "rgba(251, 191, 36, 0.2)" : "transparent",
-                borderRadius: redoCount === 2 ? "12px" : "0",
-                fontWeight: redoCount === 2 ? "bold" : "normal",
+                padding: attemptNumber === 3 ? "30px" : "0",
+                backgroundColor: attemptNumber === 3 ? "rgba(251, 191, 36, 0.2)" : "transparent",
+                borderRadius: attemptNumber === 3 ? "12px" : "0",
+                fontWeight: attemptNumber === 3 ? "bold" : "normal",
               }}
             >
-              {redoCount === 2 ? (
+              {attemptNumber === 3 ? (
                 <div>
                   <div style={{ fontSize: "50px", marginBottom: "10px" }}>⚠️</div>
                   <div>Last attempt - this is your final try for today</div>
                 </div>
               ) : (
-                `Attempt ${redoCount + 1} of 3`
+                `Attempt ${attemptNumber} of 3`
               )}
             </div>
           )}
@@ -825,19 +815,19 @@ export default function PlankTimer({
             <button
               className="btn btn--secondary"
               onClick={handleRedoAttempt}
-              disabled={redoCount >= 2}
+              disabled={attemptNumber >= 3}
               style={{
                 fontSize: "20px",
                 padding: "16px 32px",
-                opacity: redoCount >= 2 ? 0.5 : 1,
-                cursor: redoCount >= 2 ? "not-allowed" : "pointer",
+                opacity: attemptNumber >= 3 ? 0.5 : 1,
+                cursor: attemptNumber >= 3 ? "not-allowed" : "pointer",
               }}
             >
-              {redoCount >= 2 ? "No Redos Left" : "🔄 Redo"}
+              {attemptNumber >= 3 ? "No Redos Left" : "🔄 Redo"}
             </button>
           </div>
 
-          {redoCount < 2 && (
+          {attemptNumber < 3 && (
             <p
               style={{
                 fontSize: "14px",
@@ -845,7 +835,7 @@ export default function PlankTimer({
                 marginTop: "20px",
               }}
             >
-              {2 - redoCount} {2 - redoCount === 1 ? "redo" : "redos"} remaining
+              {3 - attemptNumber} {3 - attemptNumber === 1 ? "redo" : "redos"} remaining
             </p>
           )}
         </div>
@@ -881,7 +871,7 @@ export default function PlankTimer({
         </div>
       )}
 
-      {/* FAILED SCREEN (Recovery Expired) */}
+      {/* FAILED SCREEN (Recovery Expired or 3rd attempt timeout) */}
       {stage === "failed" && (
         <div style={{ textAlign: "center", padding: "20px" }}>
           <div style={{ fontSize: "60px", marginBottom: "20px" }}>😓</div>
@@ -889,7 +879,10 @@ export default function PlankTimer({
             Day {day} - Not Completed Today
           </h2>
           <p style={{ color: "var(--color-text-secondary)", fontSize: "18px" }}>
-            Recovery time expired. Try again tomorrow!
+            {attemptNumber >= 3 
+              ? "All attempts used. Try again tomorrow!"
+              : "Recovery time expired. Try again tomorrow!"
+            }
           </p>
         </div>
       )}
