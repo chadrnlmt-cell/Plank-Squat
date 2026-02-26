@@ -11,11 +11,11 @@ import {
 import { getPhoenixDate } from "../utils";
 import { updatePlankStatsOnSuccess } from "../statsHelpers";
 
-// simple helper to request/release screen wake lock
+// Simple helper to request/release screen wake lock
 // Uses the Screen Wake Lock API if supported by the browser.
 async function requestScreenWakeLock() {
   try {
-    // extra defensive checks so we don't crash on older browsers
+    // Extra defensive checks so we don't crash on older browsers
     if (
       typeof navigator !== "undefined" &&
       "wakeLock" in navigator &&
@@ -31,6 +31,16 @@ async function requestScreenWakeLock() {
   return null;
 }
 
+// Check if wake lock is supported
+function isWakeLockSupported() {
+  return (
+    typeof navigator !== "undefined" &&
+    "wakeLock" in navigator &&
+    navigator.wakeLock &&
+    typeof navigator.wakeLock.request === "function"
+  );
+}
+
 export default function PlankTimer({
   targetSeconds,
   day,
@@ -38,13 +48,15 @@ export default function PlankTimer({
   challengeId,
   userId,
   user,
-  displayName, // profile display name from App
-  teamId, // NEW: pass teamId from parent
+  displayName,
+  teamId,
   numberOfDays,
   onComplete,
   onCancel,
 }) {
-  const [stage, setStage] = useState("countdown"); // countdown | active | paused | autoStopping | complete | failed
+  const [stage, setStage] = useState("countdown"); 
+  // Stages: countdown | active | paused | autoStopping | stillGoingPrompt | keepRedoScreen | complete | failed
+  
   const [countdown, setCountdown] = useState(3);
   const [elapsed, setElapsed] = useState(0);
   const [totalRecoveryUsed, setTotalRecoveryUsed] = useState(0);
@@ -53,14 +65,32 @@ export default function PlankTimer({
   const [hasPaused, setHasPaused] = useState(false);
   const [pausedElapsed, setPausedElapsed] = useState(0);
 
+  // Anti-cheating states
+  const [redoCount, setRedoCount] = useState(0); // Track number of redos used (max 2)
+  const [stillGoingCountdown, setStillGoingCountdown] = useState(20); // 20 second countdown
+  const [frozenTime, setFrozenTime] = useState(0); // Time when frozen (for Keep/Redo screen)
+  const [showWakeLockWarning, setShowWakeLockWarning] = useState(false);
+
   const intervalRef = useRef(null);
   const recoveryIntervalRef = useRef(null);
   const startTimeRef = useRef(null);
+  const stillGoingIntervalRef = useRef(null);
 
-  // store wake lock sentinel so we can release it later
+  // Store wake lock sentinel so we can release it later
   const wakeLockRef = useRef(null);
 
   const RECOVERY_LIMIT = 60;
+
+  // Check wake lock support on mount and show warning if not supported
+  useEffect(() => {
+    if (!isWakeLockSupported()) {
+      setShowWakeLockWarning(true);
+      const timer = setTimeout(() => {
+        setShowWakeLockWarning(false);
+      }, 5000); // Hide after 5 seconds
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Countdown phase: Ready (1s), Set (1s), Go (1s)
   useEffect(() => {
@@ -88,6 +118,19 @@ export default function PlankTimer({
         const total = Math.floor((now - startTimeRef.current) / 1000);
         setElapsed(total);
 
+        // Check for "Still Going?" prompts (at 5min, then every 2min)
+        const shouldPrompt = 
+          (total === 300) || // 5 minutes
+          (total > 300 && total % 120 === 0); // Every 2 minutes after 5min
+        
+        if (shouldPrompt) {
+          clearInterval(intervalRef.current);
+          setFrozenTime(total);
+          setStillGoingCountdown(20);
+          setStage("stillGoingPrompt");
+          return;
+        }
+
         // If they paused before and hit goal, AUTO-STOP
         if (hasPaused && total >= targetSeconds) {
           clearInterval(intervalRef.current);
@@ -105,15 +148,54 @@ export default function PlankTimer({
     };
   }, [stage, hasPaused, targetSeconds]);
 
-  // Auto-stop animation (flash green 0.5s, then complete)
+  // Auto-stop animation (flash green 0.5s, then show Keep/Redo)
   useEffect(() => {
     if (stage === "autoStopping") {
       const timer = setTimeout(() => {
-        handleLogAttempt(targetSeconds, true);
+        setFrozenTime(targetSeconds);
+        setStage("keepRedoScreen");
       }, 500);
       return () => clearTimeout(timer);
     }
   }, [stage, targetSeconds]);
+
+  // "Still Going?" countdown timer
+  useEffect(() => {
+    if (stage === "stillGoingPrompt") {
+      stillGoingIntervalRef.current = setInterval(() => {
+        setStillGoingCountdown((prev) => {
+          if (prev <= 1) {
+            // Time's up - they missed it
+            clearInterval(stillGoingIntervalRef.current);
+            setStage("keepRedoScreen");
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      if (stillGoingIntervalRef.current) {
+        clearInterval(stillGoingIntervalRef.current);
+        stillGoingIntervalRef.current = null;
+      }
+    }
+    return () => {
+      if (stillGoingIntervalRef.current) {
+        clearInterval(stillGoingIntervalRef.current);
+      }
+    };
+  }, [stage]);
+
+  // Keep/Redo screen timeout (20 seconds)
+  useEffect(() => {
+    if (stage === "keepRedoScreen") {
+      const timer = setTimeout(() => {
+        // Timeout - treat as a redo used, discard time
+        handleRedoAttempt();
+      }, 20000);
+      return () => clearTimeout(timer);
+    }
+  }, [stage]);
 
   // Recovery timer (when paused)
   useEffect(() => {
@@ -146,26 +228,18 @@ export default function PlankTimer({
     };
   }, [stage, currentPauseStart, totalRecoveryUsed]);
 
-  // Handle visibility change (tab switch, minimize) - auto-pause
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden && stage === "active") {
-        handlePause();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [stage, elapsed]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Handle wake lock when stage changes
   useEffect(() => {
     let isMounted = true;
 
     const ensureWakeLock = async () => {
-      // Only try to keep screen on while plank is actually running.
-      if (stage === "active" || stage === "autoStopping") {
+      // Only try to keep screen on while plank is actually running or showing prompts
+      if (
+        stage === "active" || 
+        stage === "autoStopping" || 
+        stage === "stillGoingPrompt" ||
+        stage === "keepRedoScreen"
+      ) {
         if (!wakeLockRef.current) {
           const wl = await requestScreenWakeLock();
           if (isMounted) {
@@ -188,17 +262,16 @@ export default function PlankTimer({
     ensureWakeLock();
 
     const handleVisibility = async () => {
-      // extra guard so we don't call the API where it doesn't exist
-      const hasWakeLockApi =
-        typeof navigator !== "undefined" &&
-        "wakeLock" in navigator &&
-        navigator.wakeLock &&
-        typeof navigator.wakeLock.request === "function";
+      // Extra guard so we don't call the API where it doesn't exist
+      const hasWakeLockApi = isWakeLockSupported();
 
       if (
         hasWakeLockApi &&
         document.visibilityState === "visible" &&
-        (stage === "active" || stage === "autoStopping") &&
+        (stage === "active" || 
+         stage === "autoStopping" || 
+         stage === "stillGoingPrompt" ||
+         stage === "keepRedoScreen") &&
         !wakeLockRef.current
       ) {
         const wl = await requestScreenWakeLock();
@@ -247,9 +320,45 @@ export default function PlankTimer({
     }
   };
 
-  const handleDone = async () => {
+  const handleDone = () => {
     // Manual stop (never paused, going past goal)
-    await handleLogAttempt(elapsed, elapsed >= targetSeconds);
+    setFrozenTime(elapsed);
+    setStage("keepRedoScreen");
+  };
+
+  const handleStillGoingPressed = () => {
+    // User confirmed they're still going - continue timer
+    setStage("active");
+    // Resume from frozen time
+    startTimeRef.current = Date.now() - frozenTime * 1000;
+  };
+
+  const handleKeepTime = async () => {
+    // User chose to keep their time - log it as success
+    await handleLogAttempt(frozenTime, frozenTime >= targetSeconds);
+  };
+
+  const handleRedoAttempt = () => {
+    if (redoCount >= 2) {
+      // Already used 2 redos (3 attempts total), can't redo anymore
+      // Go back to challenge list
+      onComplete();
+      return;
+    }
+
+    // Increment redo count and reset everything
+    setRedoCount(redoCount + 1);
+    
+    // Reset all states to initial
+    setElapsed(0);
+    setPausedElapsed(0);
+    setTotalRecoveryUsed(0);
+    setCurrentPauseStart(null);
+    setCurrentRecoveryTime(0);
+    setHasPaused(false);
+    setFrozenTime(0);
+    setCountdown(3);
+    setStage("countdown");
   };
 
   const handleLogAttempt = async (actualValue, success) => {
@@ -274,7 +383,7 @@ export default function PlankTimer({
           challengeId,
           actualSeconds: actualValue,
           overrideDisplayName: displayName || undefined,
-          teamId: teamId || null, // NEW: pass teamId for caching
+          teamId: teamId || null,
         });
       }
 
@@ -310,7 +419,7 @@ export default function PlankTimer({
         targetValue: targetSeconds,
         actualValue: elapsed,
         success: false,
-        missed: false, // "failed" during the day, not a no‑show
+        missed: false,
         timestamp: Timestamp.fromDate(getPhoenixDate()),
       });
 
@@ -356,6 +465,9 @@ export default function PlankTimer({
   const recoveryRemaining =
     RECOVERY_LIMIT - totalRecoveryUsed - currentRecoveryTime;
 
+  // Determine if we should show pause button
+  const shouldShowPauseButton = hasPaused || elapsed < targetSeconds;
+
   return (
     <div
       style={{
@@ -372,6 +484,35 @@ export default function PlankTimer({
         zIndex: 1000,
       }}
     >
+      {/* Wake Lock Warning Banner */}
+      {showWakeLockWarning && (
+        <div
+          style={{
+            position: "absolute",
+            top: "60px",
+            left: "20px",
+            right: "20px",
+            backgroundColor: "#fbbf24",
+            color: "#78350f",
+            padding: "12px 16px",
+            borderRadius: "8px",
+            fontSize: "14px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            animation: "fadeIn 0.3s ease-in",
+            zIndex: 1001,
+          }}
+        >
+          <span style={{ fontSize: "18px" }}>⚠️</span>
+          <span>
+            Your browser may not support keeping the screen on. If your screen
+            goes to sleep during the plank, the timer will pause automatically.
+          </span>
+        </div>
+      )}
+
       {/* Cancel button (top-left) - only during countdown and active */}
       {(stage === "countdown" || stage === "active" || stage === "paused") && (
         <button
@@ -395,6 +536,21 @@ export default function PlankTimer({
       {/* COUNTDOWN PHASE: Ready, Set, Go */}
       {stage === "countdown" && (
         <div style={{ textAlign: "center" }}>
+          {redoCount > 0 && (
+            <div
+              style={{
+                fontSize: "16px",
+                color: "var(--color-warning)",
+                marginBottom: "20px",
+              }}
+            >
+              {redoCount === 2 ? (
+                <strong>⚠️ Last attempt - this is your final try for today</strong>
+              ) : (
+                `Attempt ${redoCount + 1} of 3`
+              )}
+            </div>
+          )}
           <h1
             style={{
               fontSize: "80px",
@@ -477,10 +633,9 @@ export default function PlankTimer({
               width: "100%",
             }}
           >
-            {/* Active - always show Pause button, and Done button if past goal */}
+            {/* Active - show Done button if past goal and never paused */}
             {stage === "active" && (
               <>
-                {/* Done button - only show if past goal and never paused */}
                 {!hasPaused && elapsed >= targetSeconds && (
                   <button
                     className="btn btn--primary"
@@ -495,17 +650,19 @@ export default function PlankTimer({
                   </button>
                 )}
 
-                {/* Pause button - always available during active */}
-                <button
-                  className="btn btn--secondary"
-                  onClick={handlePause}
-                  style={{
-                    fontSize: "20px",
-                    padding: "16px 32px",
-                  }}
-                >
-                  Pause
-                </button>
+                {/* Pause button - only show if haven't paused yet OR still under goal */}
+                {shouldShowPauseButton && (
+                  <button
+                    className="btn btn--secondary"
+                    onClick={handlePause}
+                    style={{
+                      fontSize: "20px",
+                      padding: "16px 32px",
+                    }}
+                  >
+                    Pause
+                  </button>
+                )}
               </>
             )}
 
@@ -527,6 +684,147 @@ export default function PlankTimer({
         </div>
       )}
 
+      {/* STILL GOING PROMPT */}
+      {stage === "stillGoingPrompt" && (
+        <div
+          style={{
+            textAlign: "center",
+            width: "100%",
+            maxWidth: "500px",
+            padding: "0 20px",
+          }}
+        >
+          {/* Dimmed Timer */}
+          <div
+            style={{
+              fontSize: "80px",
+              fontWeight: "bold",
+              color: "var(--color-text-secondary)",
+              marginBottom: "40px",
+              opacity: 0.4,
+            }}
+          >
+            {formatTime(frozenTime)}
+          </div>
+
+          {/* Countdown */}
+          <div
+            style={{
+              fontSize: "24px",
+              color: "var(--color-warning)",
+              marginBottom: "30px",
+            }}
+          >
+            {stillGoingCountdown} seconds
+          </div>
+
+          {/* Large Button */}
+          <button
+            className="btn btn--primary"
+            onClick={handleStillGoingPressed}
+            style={{
+              fontSize: "32px",
+              padding: "30px 60px",
+              fontWeight: "bold",
+              width: "100%",
+              maxWidth: "400px",
+            }}
+          >
+            Still Going! 💪
+          </button>
+        </div>
+      )}
+
+      {/* KEEP TIME OR REDO SCREEN */}
+      {stage === "keepRedoScreen" && (
+        <div
+          style={{
+            textAlign: "center",
+            width: "100%",
+            maxWidth: "500px",
+            padding: "0 20px",
+          }}
+        >
+          <h2 style={{ color: "var(--color-text)", marginBottom: "20px" }}>
+            Your Time
+          </h2>
+
+          {/* Display the time */}
+          <div
+            style={{
+              fontSize: "80px",
+              fontWeight: "bold",
+              color:
+                frozenTime >= targetSeconds
+                  ? "var(--color-success)"
+                  : "var(--color-warning)",
+              marginBottom: "40px",
+            }}
+          >
+            {formatTime(frozenTime)}
+          </div>
+
+          {frozenTime >= targetSeconds ? (
+            <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
+              🎉 You met your goal of {targetSeconds} seconds!
+            </p>
+          ) : (
+            <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
+              Goal: {targetSeconds} seconds
+            </p>
+          )}
+
+          {/* Buttons */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+              alignItems: "stretch",
+              width: "100%",
+            }}
+          >
+            <button
+              className="btn btn--primary"
+              onClick={handleKeepTime}
+              style={{
+                fontSize: "24px",
+                padding: "20px 40px",
+                fontWeight: "bold",
+              }}
+            >
+              ✓ Keep Time
+            </button>
+
+            <button
+              className="btn btn--secondary"
+              onClick={handleRedoAttempt}
+              disabled={redoCount >= 2}
+              style={{
+                fontSize: "20px",
+                padding: "16px 32px",
+                opacity: redoCount >= 2 ? 0.5 : 1,
+                cursor: redoCount >= 2 ? "not-allowed" : "pointer",
+              }}
+            >
+              {redoCount >= 2 ? "No Redos Left" : "🔄 Redo"}
+            </button>
+          </div>
+
+          {redoCount < 2 && (
+            <p
+              style={{
+                fontSize: "14px",
+                color: "var(--color-text-secondary)",
+                marginTop: "20px",
+              }}
+            >
+              {2 - redoCount} {2 - redoCount === 1 ? "redo" : "redos"} remaining
+            </p>
+          )}
+        </div>
+      )}
+
       {/* COMPLETION SCREEN */}
       {stage === "complete" && (
         <div style={{ textAlign: "center" }}>
@@ -541,9 +839,9 @@ export default function PlankTimer({
               fontWeight: "600",
             }}
           >
-            {formatTime(elapsed >= targetSeconds ? elapsed : targetSeconds)}
+            {formatTime(frozenTime)}
           </p>
-          {!hasPaused && elapsed > targetSeconds && (
+          {!hasPaused && frozenTime > targetSeconds && (
             <p
               style={{
                 fontSize: "18px",
@@ -551,7 +849,7 @@ export default function PlankTimer({
                 marginTop: "12px",
               }}
             >
-              +{elapsed - targetSeconds} seconds over goal! 💪
+              +{frozenTime - targetSeconds} seconds over goal! 💪
             </p>
           )}
         </div>
