@@ -41,6 +41,33 @@ function isWakeLockSupported() {
   );
 }
 
+// Recovery tip messages (rotate randomly)
+const RECOVERY_TIPS = [
+  "Take some deep breaths",
+  "Stretch those muscles",
+  "Shake it out and reset",
+  "Stay strong, you've got this",
+];
+
+// High celebration messages (+15s or more over goal)
+const HIGH_CELEBRATIONS = [
+  "Crushing it! 💪",
+  "You're on fire! 🔥",
+  "Beast mode! 💪",
+  "Incredible! 🌟",
+  "Unstoppable! 💪",
+  "Next level! 🚀",
+  "Keep dominating! 💪",
+];
+
+// Standard celebration messages (goal met, under +15s)
+const STANDARD_CELEBRATIONS = [
+  "Goal achieved! Well done! ✓",
+  "Target reached! Nice job!",
+  "You did it! Goal accomplished!",
+  "Success! You met today's goal!",
+];
+
 export default function PlankTimer({
   targetSeconds,
   day,
@@ -66,10 +93,11 @@ export default function PlankTimer({
   const [currentRecoveryTime, setCurrentRecoveryTime] = useState(0);
   const [hasPaused, setHasPaused] = useState(false);
   const [pausedElapsed, setPausedElapsed] = useState(0);
+  const [recoveryTip, setRecoveryTip] = useState("");
 
   // Anti-cheating states
   const [stillGoingCountdown, setStillGoingCountdown] = useState(20); // 20 second countdown
-  const [frozenTime, setFrozenTime] = useState(0); // Time when frozen (for Keep/Redo screen)
+  const [frozenTime, setFrozenTime] = useState(0); // Time when frozen (for Keep/Do-over screen)
   const [showWakeLockWarning, setShowWakeLockWarning] = useState(false);
   const [stillGoingStartTime, setStillGoingStartTime] = useState(null); // Track when prompt started
 
@@ -151,7 +179,7 @@ export default function PlankTimer({
     };
   }, [stage, hasPaused, targetSeconds]);
 
-  // Auto-stop animation (flash green 0.5s, then show Keep/Redo)
+  // Auto-stop animation (flash green 0.5s, then show Keep/Do-over)
   useEffect(() => {
     if (stage === "autoStopping") {
       const timer = setTimeout(() => {
@@ -190,11 +218,11 @@ export default function PlankTimer({
     };
   }, [stage]);
 
-  // Keep/Redo screen timeout (20 seconds)
+  // Keep/Do-over screen timeout (20 seconds)
   useEffect(() => {
     if (stage === "keepRedoScreen") {
       const timer = setTimeout(() => {
-        // Timeout - same behavior as clicking redo
+        // Timeout - same behavior as clicking do-over
         handleRedoAttempt();
       }, 20000);
       return () => clearTimeout(timer);
@@ -303,6 +331,9 @@ export default function PlankTimer({
       setPausedElapsed(elapsed);
       setCurrentPauseStart(Date.now());
       setCurrentRecoveryTime(0);
+      // Select random recovery tip
+      const randomTip = RECOVERY_TIPS[Math.floor(Math.random() * RECOVERY_TIPS.length)];
+      setRecoveryTip(randomTip);
       setStage("paused");
     }
   };
@@ -351,15 +382,27 @@ export default function PlankTimer({
 
   const handleRedoAttempt = () => {
     if (attemptNumber >= 3) {
-      // Already on 3rd attempt, no more redos
+      // Already on 3rd attempt, no more do-overs
       // Log as failed and advance to next day
       handleFailedAttempt();
       return;
     }
 
-    // Redo requested - increment attempt number and return to Active tab
+    // Do-over requested - increment attempt number and return to Active tab
     onRedoUsed(); // Increment attempt number in App.js
-    onComplete(true); // Pass true to indicate this is a redo (don't reset attemptNumber)
+    onComplete(true); // Pass true to indicate this is a do-over (don't reset attemptNumber)
+  };
+
+  const getCelebrationMessage = (actualValue) => {
+    const overAmount = actualValue - targetSeconds;
+    if (overAmount >= 15) {
+      // High celebration
+      const msg = HIGH_CELEBRATIONS[Math.floor(Math.random() * HIGH_CELEBRATIONS.length)];
+      return `+${overAmount} seconds over goal! ${msg}`;
+    } else {
+      // Standard celebration
+      return STANDARD_CELEBRATIONS[Math.floor(Math.random() * STANDARD_CELEBRATIONS.length)];
+    }
   };
 
   const handleLogAttempt = async (actualValue, success) => {
@@ -563,7 +606,7 @@ export default function PlankTimer({
               {attemptNumber === 3 ? (
                 <div>
                   <div style={{ fontSize: "50px", marginBottom: "10px" }}>⚠️</div>
-                  <div>Last attempt - this is your final try for today</div>
+                  <div>Last chance today - you've got this!</div>
                 </div>
               ) : (
                 `Attempt ${attemptNumber} of 3`
@@ -603,7 +646,7 @@ export default function PlankTimer({
               marginBottom: "40px",
             }}
           >
-            Day {day} Goal: {targetSeconds} seconds
+            Day {day} challenge Goal: {targetSeconds} seconds
           </div>
 
           {/* Big Timer */}
@@ -619,7 +662,7 @@ export default function PlankTimer({
             {formatTime(stage === "paused" ? pausedElapsed : elapsed)}
           </div>
 
-          {/* Paused Status */}
+          {/* Paused Status with Recovery Tip */}
           {stage === "paused" && (
             <div
               style={{
@@ -637,7 +680,7 @@ export default function PlankTimer({
                   color: "var(--color-text-secondary)",
                 }}
               >
-                Recovery: {formatTime(Math.max(0, recoveryRemaining))}
+                Recovery: {formatTime(Math.max(0, recoveryRemaining))} - {recoveryTip}
               </div>
             </div>
           )}
@@ -728,12 +771,23 @@ export default function PlankTimer({
               fontSize: "48px",
               fontWeight: "bold",
               color: "white",
-              marginBottom: "40px",
+              marginBottom: "20px",
               textAlign: "center",
               padding: "0 20px",
             }}
           >
-            Touch if Still Going
+            Still crushing it? Tap here!
+          </div>
+          
+          <div
+            style={{
+              fontSize: "20px",
+              color: "white",
+              marginBottom: "40px",
+              opacity: 0.9,
+            }}
+          >
+            (Tap anywhere)
           </div>
 
           {/* Countdown */}
@@ -761,7 +815,7 @@ export default function PlankTimer({
         </div>
       )}
 
-      {/* KEEP TIME OR REDO SCREEN */}
+      {/* KEEP TIME OR DO-OVER SCREEN */}
       {stage === "keepRedoScreen" && (
         <div
           style={{
@@ -833,7 +887,7 @@ export default function PlankTimer({
                 cursor: attemptNumber >= 3 ? "not-allowed" : "pointer",
               }}
             >
-              {attemptNumber >= 3 ? "No Redos Left" : "🔄 Redo"}
+              {attemptNumber >= 3 ? "No Do-Overs Left" : "🔄 Do-Over"}
             </button>
           </div>
 
@@ -845,7 +899,7 @@ export default function PlankTimer({
                 marginTop: "20px",
               }}
             >
-              {3 - attemptNumber} {3 - attemptNumber === 1 ? "redo" : "redos"} remaining
+              {3 - attemptNumber} {3 - attemptNumber === 1 ? "do-over" : "do-overs"} remaining
             </p>
           )}
         </div>
@@ -856,7 +910,7 @@ export default function PlankTimer({
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: "80px", marginBottom: "20px" }}>🎉</div>
           <h2 style={{ color: "var(--color-success)", marginBottom: "16px" }}>
-            Day {day} Complete!
+            Day {day} challenge Complete!
           </h2>
           <p
             style={{
@@ -875,7 +929,7 @@ export default function PlankTimer({
                 marginTop: "12px",
               }}
             >
-              +{frozenTime - targetSeconds} seconds over goal! 💪
+              {getCelebrationMessage(frozenTime)}
             </p>
           )}
         </div>
@@ -884,12 +938,12 @@ export default function PlankTimer({
       {/* FAILED SCREEN (Recovery Expired or 3rd attempt timeout) */}
       {stage === "failed" && (
         <div style={{ textAlign: "center", padding: "20px" }}>
-          <div style={{ fontSize: "60px", marginBottom: "20px" }}>😓</div>
-          <h2 style={{ color: "var(--color-error)", marginBottom: "12px" }}>
-            Couldn't finish Day {day}
+          <div style={{ fontSize: "60px", marginBottom: "20px" }}>📝</div>
+          <h2 style={{ color: "var(--color-text)", marginBottom: "12px" }}>
+            Day {day} challenge logged - tomorrow's a new opportunity!
           </h2>
           <p style={{ color: "var(--color-text-secondary)", fontSize: "18px" }}>
-            Let's tackle Day {day + 1} tomorrow!
+            Ready to crush Day {day + 1} challenge tomorrow!
           </p>
         </div>
       )}
