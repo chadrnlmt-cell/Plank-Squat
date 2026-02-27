@@ -20,7 +20,8 @@ import TabNavigation from "./components/TabNavigation";
 import AdminPanel from "./components/AdminPanel";
 import Leaderboard from "./components/Leaderboard";
 import Profile from "./components/Profile";
-import { getPhoenixDate, getChallengeDayFromStart } from "./utils";
+import Banner from "./components/Banner";
+import { getPhoenixDate, getChallengeDayFromStart, formatDateShort } from "./utils";
 import "./styles.css";
 
 export default function App() {
@@ -33,6 +34,12 @@ export default function App() {
   
   // Track attempt number for current day (1-3, where 1 is original attempt)
   const [attemptNumber, setAttemptNumber] = useState(1);
+  
+  // Track if returning from a redo
+  const [showRedoMessage, setShowRedoMessage] = useState(false);
+
+  // Banner state
+  const [banner, setBanner] = useState(null);
 
   // NEW: app-level profile name from Firestore users/<uid>
   const [profileName, setProfileName] = useState("");
@@ -297,6 +304,8 @@ export default function App() {
       setActiveTab("available");
       setProfileName("");
       setAttemptNumber(1);
+      setShowRedoMessage(false);
+      setBanner(null);
     } catch (error) {
       console.error("Error signing out:", error);
     }
@@ -304,18 +313,18 @@ export default function App() {
 
   const handleJoinChallenge = async (challenge, teamId = null) => {
     try {
-      // NEW: Check if user has already joined this challenge
+      // Check if user has already joined this challenge
       const alreadyJoined = userChallenges.some(
         (uc) => uc.challengeId === challenge.id
       );
 
       if (alreadyJoined) {
-        alert("You've already joined this challenge!");
+        setBanner({ message: "You're already in this challenge - check the Active tab!", type: "info" });
         return;
       }
 
       if (!challenge.startDate || !challenge.numberOfDays) {
-        alert("Challenge is not configured correctly.");
+        setBanner({ message: "Challenge is not configured correctly.", type: "warning" });
         return;
       }
 
@@ -325,16 +334,13 @@ export default function App() {
       );
 
       if (globalDay === 0) {
-        alert(
-          "This challenge hasn't started yet. You can join on the start date."
-        );
+        const startDateStr = formatDateShort(challenge.startDate.toDate());
+        setBanner({ message: `This challenge hasn't started yet - check back on ${startDateStr}!`, type: "info" });
         return;
       }
 
       if (globalDay > challenge.numberOfDays) {
-        alert(
-          "This challenge has already finished and can no longer be joined."
-        );
+        setBanner({ message: "This challenge has ended - check back for new challenges!", type: "info" });
         return;
       }
 
@@ -357,7 +363,7 @@ export default function App() {
       setActiveTab("active");
     } catch (error) {
       console.error("Error joining challenge:", error);
-      alert("Error joining challenge");
+      setBanner({ message: "Error joining challenge", type: "warning" });
     }
   };
 
@@ -370,14 +376,19 @@ export default function App() {
       today.setHours(0, 0, 0, 0);
 
       if (lastCompleted.getTime() === today.getTime()) {
-        alert(
-          "You've already completed today's challenge! Come back tomorrow at midnight MST."
-        );
+        // Check if this is the final day
+        const isFinalDay = userChallenge.currentDay === userChallenge.challengeDetails.numberOfDays;
+        if (isFinalDay) {
+          setBanner({ message: `✓ Challenge Complete! You crushed all ${userChallenge.challengeDetails.numberOfDays} days! 🎉`, type: "info" });
+        } else {
+          setBanner({ message: "✓ Today's challenge crushed! Next up tomorrow at midnight MST", type: "info" });
+        }
         return;
       }
     }
 
     setActiveChallengeData(userChallenge);
+    setShowRedoMessage(false); // Clear redo message when starting
   };
 
   const handleChallengeComplete = async (isRedo = false) => {
@@ -385,6 +396,10 @@ export default function App() {
     // Only reset attempt counter if it's NOT a redo (i.e., day actually completed or failed)
     if (!isRedo) {
       setAttemptNumber(1);
+      setShowRedoMessage(false);
+    } else {
+      // It's a redo - show encouragement message
+      setShowRedoMessage(true);
     }
     await loadUserChallenges();
   };
@@ -392,6 +407,7 @@ export default function App() {
   const handleChallengeCancel = () => {
     setActiveChallengeData(null);
     setAttemptNumber(1); // Reset attempt counter on cancel
+    setShowRedoMessage(false);
   };
 
   const handleRedoUsed = () => {
@@ -508,6 +524,15 @@ export default function App() {
   // Main App (Logged In)
   return (
     <div style={{ paddingBottom: "80px" }}>
+      {/* Banner notifications */}
+      {banner && (
+        <Banner
+          message={banner.message}
+          type={banner.type}
+          onClose={() => setBanner(null)}
+        />
+      )}
+
       {/* Header */}
       <div
         style={{
@@ -551,7 +576,7 @@ export default function App() {
             <h2>Available Challenges</h2>
             {challenges.length === 0 ? (
               <p style={{ color: "#999" }}>
-                No challenges available at this time.
+                New challenges coming soon - check back later!
               </p>
             ) : (
               <div
@@ -587,7 +612,7 @@ export default function App() {
             {userChallenges.filter((uc) => uc.status === "active").length ===
             0 ? (
               <p style={{ color: "#999" }}>
-                You haven't joined any challenges yet. Check the Available tab!
+                Ready to start? Check out Available challenges!
               </p>
             ) : (
               <div
@@ -601,8 +626,9 @@ export default function App() {
                   .filter((uc) => uc.status === "active")
                   .map((userChallenge) => {
                     const canStart = canStartToday(userChallenge);
-                    const missedCount = userChallenge.missedDaysCount || 0;
+                    const restCount = userChallenge.missedDaysCount || 0;
                     const redosRemaining = 3 - attemptNumber;
+                    const isFinalDay = userChallenge.currentDay === userChallenge.challengeDetails.numberOfDays;
 
                     return (
                       <div
@@ -618,14 +644,14 @@ export default function App() {
                           {userChallenge.challengeDetails.name}
                         </h3>
                         <p style={{ margin: "5px 0", color: "#666" }}>
-                          Day {userChallenge.currentDay} of{" "}
+                          Day {userChallenge.currentDay} challenge of{" "}
                           {userChallenge.challengeDetails.numberOfDays}
                         </p>
                         <p style={{ margin: "5px 0", color: "#666" }}>
                           {userChallenge.challengeDetails.description}
                         </p>
                         <p style={{ margin: "5px 0", color: "#666" }}>
-                          Missed days: {missedCount}
+                          Rest days: {restCount}
                         </p>
 
                         {attemptNumber > 1 && canStart && (
@@ -638,9 +664,23 @@ export default function App() {
                             }}
                           >
                             {attemptNumber === 3 
-                              ? "⚠️ Final attempt remaining"
-                              : `${redosRemaining} ${redosRemaining === 1 ? "redo" : "redos"} remaining`
+                              ? "⚠️ Final do-over remaining"
+                              : `${redosRemaining} ${redosRemaining === 1 ? "do-over" : "do-overs"} remaining`
                             }
+                          </p>
+                        )}
+
+                        {/* Show redo encouragement message */}
+                        {showRedoMessage && canStart && (
+                          <p
+                            style={{
+                              margin: "10px 0 5px 0",
+                              color: "#22c55e",
+                              fontWeight: "600",
+                              fontSize: "15px",
+                            }}
+                          >
+                            Ready for another try - you've got this!
                           </p>
                         )}
 
@@ -658,7 +698,10 @@ export default function App() {
                               cursor: "pointer",
                             }}
                           >
-                            Start Day {userChallenge.currentDay}
+                            {isFinalDay 
+                              ? `Start Day ${userChallenge.currentDay} (Final Day) - Make it count! 🎯`
+                              : `Start Day ${userChallenge.currentDay} challenge 💪`
+                            }
                             {attemptNumber > 1 && ` (Attempt ${attemptNumber})`}
                           </button>
                         ) : (
@@ -674,8 +717,10 @@ export default function App() {
                               textAlign: "center",
                             }}
                           >
-                            ✓ Completed Today! Come back tomorrow at midnight
-                            MST
+                            {isFinalDay
+                              ? `✓ Challenge Complete! You crushed all ${userChallenge.challengeDetails.numberOfDays} days! 🎉`
+                              : "✓ Today's challenge crushed! Next up tomorrow at midnight MST"
+                            }
                           </div>
                         )}
                       </div>
