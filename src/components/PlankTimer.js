@@ -442,10 +442,11 @@ export default function PlankTimer({
         status: isComplete ? "completed" : "active",
       });
 
+      // Show completion screen, then auto-return after 5 seconds
       setStage("complete");
       setTimeout(() => {
         onComplete(false); // Pass false - day actually completed, reset attemptNumber
-      }, 2000);
+      }, 5000); // Changed from 2000 to 5000 (5 seconds)
     } catch (error) {
       console.error("Error logging attempt:", error);
       alert("Failed to log attempt: " + (error?.message || "unknown error"));
@@ -638,6 +639,26 @@ export default function PlankTimer({
             padding: "0 20px",
           }}
         >
+          {/* Prominent Recovery Tip (when paused) */}
+          {stage === "paused" && (
+            <div
+              style={{
+                position: "absolute",
+                top: "80px",
+                left: "20px",
+                right: "20px",
+                fontSize: "90px",
+                fontWeight: "bold",
+                color: "#f97316",
+                textAlign: "center",
+                lineHeight: "1.1",
+                textShadow: "0 2px 4px rgba(0,0,0,0.1)",
+              }}
+            >
+              {recoveryTip}
+            </div>
+          )}
+
           {/* Goal Display */}
           <div
             style={{
@@ -662,7 +683,7 @@ export default function PlankTimer({
             {formatTime(stage === "paused" ? pausedElapsed : elapsed)}
           </div>
 
-          {/* Paused Status with Recovery Tip */}
+          {/* Paused Status with Recovery Time */}
           {stage === "paused" && (
             <div
               style={{
@@ -680,7 +701,7 @@ export default function PlankTimer({
                   color: "var(--color-text-secondary)",
                 }}
               >
-                Recovery: {formatTime(Math.max(0, recoveryRemaining))} - {recoveryTip}
+                Recovery: {formatTime(Math.max(0, recoveryRemaining))}
               </div>
             </div>
           )}
