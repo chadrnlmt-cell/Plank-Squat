@@ -352,7 +352,7 @@ export default function PlankTimer({
   const handleRedoAttempt = () => {
     if (attemptNumber >= 3) {
       // Already on 3rd attempt, no more redos
-      // Log as failed and return to Active tab
+      // Log as failed and advance to next day
       handleFailedAttempt();
       return;
     }
@@ -410,7 +410,7 @@ export default function PlankTimer({
   };
 
   const handleFailedAttempt = async () => {
-    // Recovery expired or 3rd attempt timeout - log failed attempt
+    // Recovery expired or 3rd attempt timeout - log failed attempt AND advance day
     try {
       await addDoc(collection(db, "attempts"), {
         userId: userId,
@@ -424,9 +424,19 @@ export default function PlankTimer({
         timestamp: Timestamp.fromDate(getPhoenixDate()),
       });
 
-      // Don't advance day - they can try again tomorrow
+      // Advance to next day (same as success, but without updating stats)
+      const nextDay = day + 1;
+      const isComplete = nextDay > numberOfDays;
+
+      await updateDoc(doc(db, "userChallenges", userChallengeId), {
+        currentDay: nextDay,
+        lastCompletedDay: day,
+        lastCompletedDate: Timestamp.fromDate(getPhoenixDate()),
+        status: isComplete ? "completed" : "active",
+      });
+
       setTimeout(() => {
-        onComplete(false); // Pass false - day failed, reset attemptNumber
+        onComplete(false); // Pass false - day failed but completed, reset attemptNumber
       }, 3000);
     } catch (error) {
       console.error("Error logging failed attempt:", error);
@@ -876,13 +886,10 @@ export default function PlankTimer({
         <div style={{ textAlign: "center", padding: "20px" }}>
           <div style={{ fontSize: "60px", marginBottom: "20px" }}>😓</div>
           <h2 style={{ color: "var(--color-error)", marginBottom: "12px" }}>
-            Day {day} - Not Completed Today
+            Couldn't finish Day {day}
           </h2>
           <p style={{ color: "var(--color-text-secondary)", fontSize: "18px" }}>
-            {attemptNumber >= 3 
-              ? "All attempts used. Try again tomorrow!"
-              : "Recovery time expired. Try again tomorrow!"
-            }
+            Let's tackle Day {day + 1} tomorrow!
           </p>
         </div>
       )}
