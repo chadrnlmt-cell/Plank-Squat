@@ -1,7 +1,7 @@
 // src/components/Leaderboard.js
 import React, { useEffect, useState, useRef } from "react";
 import { db } from "../firebase";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, limit } from "firebase/firestore";
 
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -16,6 +16,11 @@ export default function Leaderboard({ user, challenges }) {
   const [lastFetched, setLastFetched] = useState(null); // timestamp of last fetch
   const [teamViewMode, setTeamViewMode] = useState("total"); // "total" | "average"
 
+  // NEW: History viewing
+  const [viewMode, setViewMode] = useState("current"); // "current" | "previous1" | "previous2"
+  const [historyData, setHistoryData] = useState({ previous1: null, previous2: null });
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   // Cache refs
   const cacheRef = useRef({
     challengeId: null,
@@ -26,7 +31,11 @@ export default function Leaderboard({ user, challenges }) {
   });
 
   // Check if active challenge is a team challenge
-  const isTeamChallenge = activeChallenge?.isTeamChallenge || false;
+  const isTeamChallenge = viewMode === "current" 
+    ? (activeChallenge?.isTeamChallenge || false)
+    : (viewMode === "previous1" && historyData.previous1?.isTeamChallenge) ||
+      (viewMode === "previous2" && historyData.previous2?.isTeamChallenge) ||
+      false;
 
   // Load teams (cached with same 5-min logic)
   useEffect(() => {
@@ -71,137 +80,218 @@ export default function Leaderboard({ user, challenges }) {
     setActiveChallenge(candidate || null);
   }, [movementType, challenges]);
 
-  // Load leaderboard entries when active challenge changes
+  // Load leaderboard history when movement type changes
   useEffect(() => {
-    const loadLeaderboard = async () => {
-      if (!activeChallenge) {
-        setEntries([]);
-        setTeamStandings([]);
-        setLastFetched(null);
-        return;
-      }
+    loadLeaderboardHistory();
+  }, [movementType]);
 
-      // Check cache: if same challenge and within 5 minutes, use cached data
-      if (
-        cacheRef.current.challengeId === activeChallenge.id &&
-        cacheRef.current.timestamp &&
-        Date.now() - cacheRef.current.timestamp < CACHE_DURATION_MS
-      ) {
-        console.log("Using cached leaderboard data");
-        setEntries(cacheRef.current.entries);
-        setTeamStandings(cacheRef.current.teamStandings);
-        setLastFetched(new Date(cacheRef.current.timestamp));
-        return;
-      }
+  // Load current leaderboard entries when active challenge changes
+  useEffect(() => {
+    if (viewMode === "current") {
+      loadCurrentLeaderboard();
+    }
+  }, [activeChallenge, teams, viewMode]);
 
-      setLoading(true);
-      try {
-        // Load user stats - NOW includes teamId directly!
-        const statsRef = collection(db, "challengeUserStats");
-        const qStats = query(
-          statsRef,
-          where("challengeId", "==", activeChallenge.id)
-        );
-        const snap = await getDocs(qStats);
+  // NEW: Load leaderboard history
+  const loadLeaderboardHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const q = query(
+        collection(db, "leaderboardHistory"),
+        where("challengeType", "==", movementType),
+        orderBy("archivedAt", "desc"),
+        limit(2)
+      );
+      const snapshot = await getDocs(q);
+      
+      const archives = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
-        // NO MORE userChallenges query needed! teamId is in challengeUserStats now
-        const rows = snap.docs.map((docSnap) => {
-          const data = docSnap.data();
+      setHistoryData({
+        previous1: archives[0] || null,
+        previous2: archives[1] || null,
+      });
+    } catch (error) {
+      console.error("Error loading leaderboard history:", error);
+      setHistoryData({ previous1: null, previous2: null });
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const loadCurrentLeaderboard = async () => {
+    if (!activeChallenge) {
+      setEntries([]);
+      setTeamStandings([]);
+      setLastFetched(null);
+      return;
+    }
+
+    // Check cache: if same challenge and within 5 minutes, use cached data
+    if (
+      cacheRef.current.challengeId === activeChallenge.id &&
+      cacheRef.current.timestamp &&
+      Date.now() - cacheRef.current.timestamp < CACHE_DURATION_MS
+    ) {
+      console.log("Using cached leaderboard data");
+      setEntries(cacheRef.current.entries);
+      setTeamStandings(cacheRef.current.teamStandings);
+      setLastFetched(new Date(cacheRef.current.timestamp));
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const statsRef = collection(db, "challengeUserStats");
+      const qStats = query(
+        statsRef,
+        where("challengeId", "==", activeChallenge.id)
+      );
+      const snap = await getDocs(qStats);
+
+      const rows = snap.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          userId: data.userId || null,
+          displayName: data.displayName || "Anonymous",
+          photoURL: data.photoURL || null,
+          totalSeconds: data.totalSeconds || 0,
+          totalReps: data.totalReps || 0,
+          bestSeconds: data.bestSeconds || 0,
+          bestReps: data.bestReps || 0,
+          firstAchievedAt: data.firstAchievedAt || null,
+          teamId: data.teamId || null,
+        };
+      });
+
+      setEntries(rows);
+
+      // Calculate team standings ONLY if this is a team challenge
+      if (activeChallenge.isTeamChallenge) {
+        const teamTotals = {};
+        rows.forEach((row) => {
+          if (row.teamId) {
+            if (!teamTotals[row.teamId]) {
+              teamTotals[row.teamId] = {
+                teamId: row.teamId,
+                totalSeconds: 0,
+                totalReps: 0,
+                memberCount: 0,
+              };
+            }
+            teamTotals[row.teamId].totalSeconds += row.totalSeconds || 0;
+            teamTotals[row.teamId].totalReps += row.totalReps || 0;
+            teamTotals[row.teamId].memberCount += 1;
+          }
+        });
+
+        const standings = Object.values(teamTotals).map((t) => {
+          const team = teams.find((tm) => tm.id === t.teamId);
           return {
-            id: docSnap.id,
-            userId: data.userId || null,
-            displayName: data.displayName || "Anonymous",
-            photoURL: data.photoURL || null,
-            totalSeconds: data.totalSeconds || 0,
-            totalReps: data.totalReps || 0,
-            bestSeconds: data.bestSeconds || 0,
-            bestReps: data.bestReps || 0,
-            firstAchievedAt: data.firstAchievedAt || null,
-            teamId: data.teamId || null, // NEW: read directly from challengeUserStats!
+            ...t,
+            teamName: team?.name || "Unknown Team",
+            teamColor: team?.color || "#999",
+            avgSeconds: t.memberCount > 0 ? Math.round(t.totalSeconds / t.memberCount) : 0,
+            avgReps: t.memberCount > 0 ? Math.round(t.totalReps / t.memberCount) : 0,
           };
         });
 
-        setEntries(rows);
-
-        // Calculate team standings ONLY if this is a team challenge
-        if (isTeamChallenge) {
-          const teamTotals = {};
-          rows.forEach((row) => {
-            if (row.teamId) {
-              if (!teamTotals[row.teamId]) {
-                teamTotals[row.teamId] = {
-                  teamId: row.teamId,
-                  totalSeconds: 0,
-                  totalReps: 0,
-                  memberCount: 0,
-                };
-              }
-              teamTotals[row.teamId].totalSeconds += row.totalSeconds || 0;
-              teamTotals[row.teamId].totalReps += row.totalReps || 0;
-              teamTotals[row.teamId].memberCount += 1;
-            }
-          });
-
-          const standings = Object.values(teamTotals).map((t) => {
-            const team = teams.find((tm) => tm.id === t.teamId);
-            return {
-              ...t,
-              teamName: team?.name || "Unknown Team",
-              teamColor: team?.color || "#999",
-              avgSeconds: t.memberCount > 0 ? Math.round(t.totalSeconds / t.memberCount) : 0,
-              avgReps: t.memberCount > 0 ? Math.round(t.totalReps / t.memberCount) : 0,
-            };
-          });
-
-          setTeamStandings(standings);
-        } else {
-          setTeamStandings([]);
-        }
-
-        // Cache the results
-        const now = Date.now();
-        cacheRef.current = {
-          challengeId: activeChallenge.id,
-          entries: rows,
-          teamStandings: isTeamChallenge ? teamStandings : [],
-          timestamp: now,
-          teams: teams, // cache teams too
-        };
-        setLastFetched(new Date(now));
-
-        console.log("Leaderboard data fetched and cached");
-      } catch (err) {
-        console.error("Error loading leaderboard:", err);
-        setEntries([]);
+        setTeamStandings(standings);
+      } else {
         setTeamStandings([]);
-      } finally {
-        setLoading(false);
       }
-    };
 
-    loadLeaderboard();
-  }, [activeChallenge, teams, isTeamChallenge]);
+      // Cache the results
+      const now = Date.now();
+      cacheRef.current = {
+        challengeId: activeChallenge.id,
+        entries: rows,
+        teamStandings: activeChallenge.isTeamChallenge ? teamStandings : [],
+        timestamp: now,
+        teams: teams,
+      };
+      setLastFetched(new Date(now));
+
+      console.log("Leaderboard data fetched and cached");
+    } catch (err) {
+      console.error("Error loading leaderboard:", err);
+      setEntries([]);
+      setTeamStandings([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Manual refresh function
   const handleRefresh = () => {
-    cacheRef.current.timestamp = null; // invalidate cache
-    setActiveChallenge({ ...activeChallenge }); // trigger reload
+    if (viewMode === "current") {
+      cacheRef.current.timestamp = null; // invalidate cache
+      loadCurrentLeaderboard();
+    }
   };
 
+  // Get data based on view mode
+  const getCurrentViewData = () => {
+    if (viewMode === "current") {
+      return {
+        entries,
+        teamStandings,
+        isTeamChallenge: activeChallenge?.isTeamChallenge || false,
+        challengeName: activeChallenge?.name || "",
+        challengeDescription: activeChallenge?.description || "",
+        startDate: activeChallenge?.startDate?.toDate ? activeChallenge.startDate.toDate() : null,
+        endDate: null,
+      };
+    } else if (viewMode === "previous1" && historyData.previous1) {
+      return {
+        entries: historyData.previous1.topTotal || [],
+        teamStandings: historyData.previous1.teamStandings || [],
+        isTeamChallenge: historyData.previous1.isTeamChallenge || false,
+        challengeName: historyData.previous1.challengeName || "",
+        challengeDescription: historyData.previous1.challengeDescription || "",
+        startDate: historyData.previous1.startDate?.toDate ? historyData.previous1.startDate.toDate() : null,
+        endDate: historyData.previous1.endDate?.toDate ? historyData.previous1.endDate.toDate() : null,
+      };
+    } else if (viewMode === "previous2" && historyData.previous2) {
+      return {
+        entries: historyData.previous2.topTotal || [],
+        teamStandings: historyData.previous2.teamStandings || [],
+        isTeamChallenge: historyData.previous2.isTeamChallenge || false,
+        challengeName: historyData.previous2.challengeName || "",
+        challengeDescription: historyData.previous2.challengeDescription || "",
+        startDate: historyData.previous2.startDate?.toDate ? historyData.previous2.startDate.toDate() : null,
+        endDate: historyData.previous2.endDate?.toDate ? historyData.previous2.endDate.toDate() : null,
+      };
+    }
+    return {
+      entries: [],
+      teamStandings: [],
+      isTeamChallenge: false,
+      challengeName: "",
+      challengeDescription: "",
+      startDate: null,
+      endDate: null,
+    };
+  };
+
+  const viewData = getCurrentViewData();
   const isPlank = movementType === "plank";
 
   // Filter entries by selected team (only for team challenges)
   const filteredEntries =
     isTeamChallenge && selectedTeamFilter !== "all"
-      ? entries.filter((e) => e.teamId === selectedTeamFilter)
-      : entries;
+      ? viewData.entries.filter((e) => e.teamId === selectedTeamFilter)
+      : viewData.entries;
 
   // Sorting helpers with tie-breakers
   const compareTotals = (a, b) => {
     const aVal = isPlank ? a.totalSeconds : a.totalReps;
     const bVal = isPlank ? b.totalSeconds : b.totalReps;
 
-    if (bVal !== aVal) return bVal - aVal; // higher total first
+    if (bVal !== aVal) return bVal - aVal;
 
     const aTime = a.firstAchievedAt?.toMillis
       ? a.firstAchievedAt.toMillis()
@@ -211,7 +301,7 @@ export default function Leaderboard({ user, challenges }) {
       : null;
 
     if (aTime && bTime && aTime !== bTime) {
-      return aTime - bTime; // earlier firstAchievedAt wins
+      return aTime - bTime;
     }
 
     const nameA = (a.displayName || "").toLowerCase();
@@ -225,7 +315,7 @@ export default function Leaderboard({ user, challenges }) {
     const aVal = isPlank ? a.bestSeconds : a.bestReps;
     const bVal = isPlank ? b.bestSeconds : b.bestReps;
 
-    if (bVal !== aVal) return bVal - aVal; // higher best first
+    if (bVal !== aVal) return bVal - aVal;
 
     const aTime = a.firstAchievedAt?.toMillis
       ? a.firstAchievedAt.toMillis()
@@ -235,7 +325,7 @@ export default function Leaderboard({ user, challenges }) {
       : null;
 
     if (aTime && bTime && aTime !== bTime) {
-      return aTime - bTime; // earlier firstAchievedAt wins
+      return aTime - bTime;
     }
 
     const nameA = (a.displayName || "").toLowerCase();
@@ -245,11 +335,20 @@ export default function Leaderboard({ user, challenges }) {
     return 0;
   };
 
-  const topTotal = [...filteredEntries].sort(compareTotals).slice(0, 10);
-  const topBest = [...filteredEntries].sort(compareBests).slice(0, 5);
+  // Get top performers (for historical, already limited to 10, for current slice to 10)
+  const topTotal = viewMode === "current" 
+    ? [...filteredEntries].sort(compareTotals).slice(0, 10)
+    : filteredEntries; // Historical data already contains top 10
+
+  // For best, historical has topBest array
+  const topBest = viewMode === "current"
+    ? [...filteredEntries].sort(compareBests).slice(0, 5)
+    : (viewMode === "previous1" && historyData.previous1?.topBest) ||
+      (viewMode === "previous2" && historyData.previous2?.topBest) ||
+      [];
 
   // Sort team standings based on view mode
-  const sortedTeamStandings = [...teamStandings].sort((a, b) => {
+  const sortedTeamStandings = [...viewData.teamStandings].sort((a, b) => {
     if (teamViewMode === "average") {
       const aVal = isPlank ? a.avgSeconds : a.avgReps;
       const bVal = isPlank ? b.avgSeconds : b.avgReps;
@@ -267,6 +366,22 @@ export default function Leaderboard({ user, challenges }) {
     const rem = s % 60;
     if (mins === 0) return `${rem}s`;
     return `${mins}m ${rem}s`;
+  };
+
+  const formatDateRange = (start, end) => {
+    if (!start) return "";
+    const startStr = start.toLocaleDateString("en-US", { 
+      month: "short", 
+      day: "numeric",
+      year: "numeric" 
+    });
+    if (!end) return startStr;
+    const endStr = end.toLocaleDateString("en-US", { 
+      month: "short", 
+      day: "numeric",
+      year: "numeric" 
+    });
+    return `${startStr} - ${endStr}`;
   };
 
   // Helper to get team info
@@ -288,7 +403,10 @@ export default function Leaderboard({ user, challenges }) {
         }}
       >
         <button
-          onClick={() => setMovementType("plank")}
+          onClick={() => {
+            setMovementType("plank");
+            setViewMode("current");
+          }}
           style={{
             flex: 1,
             padding: "8px",
@@ -302,7 +420,10 @@ export default function Leaderboard({ user, challenges }) {
           Plank
         </button>
         <button
-          onClick={() => setMovementType("squat")}
+          onClick={() => {
+            setMovementType("squat");
+            setViewMode("current");
+          }}
           style={{
             flex: 1,
             padding: "8px",
@@ -317,8 +438,67 @@ export default function Leaderboard({ user, challenges }) {
         </button>
       </div>
 
-      {/* Last Updated & Refresh Button */}
-      {lastFetched && (
+      {/* NEW: History Toggle */}
+      <div
+        style={{
+          display: "flex",
+          gap: "8px",
+          marginBottom: "16px",
+        }}
+      >
+        <button
+          onClick={() => setViewMode("current")}
+          style={{
+            flex: 1,
+            padding: "8px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            backgroundColor: viewMode === "current" ? "#2196F3" : "#fff",
+            color: viewMode === "current" ? "#fff" : "#333",
+            cursor: "pointer",
+            fontWeight: viewMode === "current" ? "bold" : "normal",
+          }}
+        >
+          Current
+        </button>
+        <button
+          onClick={() => setViewMode("previous1")}
+          disabled={!historyData.previous1}
+          style={{
+            flex: 1,
+            padding: "8px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            backgroundColor: viewMode === "previous1" ? "#2196F3" : "#fff",
+            color: viewMode === "previous1" ? "#fff" : historyData.previous1 ? "#333" : "#999",
+            cursor: historyData.previous1 ? "pointer" : "not-allowed",
+            fontWeight: viewMode === "previous1" ? "bold" : "normal",
+            opacity: historyData.previous1 ? 1 : 0.6,
+          }}
+        >
+          Previous #1
+        </button>
+        <button
+          onClick={() => setViewMode("previous2")}
+          disabled={!historyData.previous2}
+          style={{
+            flex: 1,
+            padding: "8px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            backgroundColor: viewMode === "previous2" ? "#2196F3" : "#fff",
+            color: viewMode === "previous2" ? "#fff" : historyData.previous2 ? "#333" : "#999",
+            cursor: historyData.previous2 ? "pointer" : "not-allowed",
+            fontWeight: viewMode === "previous2" ? "bold" : "normal",
+            opacity: historyData.previous2 ? 1 : 0.6,
+          }}
+        >
+          Previous #2
+        </button>
+      </div>
+
+      {/* Last Updated & Refresh Button (only for current view) */}
+      {viewMode === "current" && lastFetched && (
         <div
           style={{
             display: "flex",
@@ -350,14 +530,30 @@ export default function Leaderboard({ user, challenges }) {
         </div>
       )}
 
-      {/* Active Challenge Info */}
-      {!activeChallenge && (
+      {/* Challenge Info */}
+      {viewMode === "current" && !activeChallenge && (
         <p style={{ color: "#999" }}>
           No active {movementType} challenge found.
         </p>
       )}
 
-      {activeChallenge && (
+      {viewMode !== "current" && !viewData.challengeName && (
+        <div
+          style={{
+            padding: "40px 20px",
+            textAlign: "center",
+            backgroundColor: "#f9f9f9",
+            borderRadius: "8px",
+            color: "#666",
+          }}
+        >
+          <p style={{ fontSize: "16px", margin: 0 }}>
+            No archived challenge yet - check back soon!
+          </p>
+        </div>
+      )}
+
+      {viewData.challengeName && (
         <div
           style={{
             marginBottom: "16px",
@@ -367,7 +563,19 @@ export default function Leaderboard({ user, challenges }) {
           }}
         >
           <div style={{ fontWeight: "600" }}>
-            {activeChallenge.name}
+            {viewData.challengeName}
+            {viewMode !== "current" && (
+              <span
+                style={{
+                  marginLeft: "8px",
+                  fontSize: "12px",
+                  color: "#666",
+                  fontWeight: "normal",
+                }}
+              >
+                ({formatDateRange(viewData.startDate, viewData.endDate)})
+              </span>
+            )}
             {isTeamChallenge && (
               <span
                 style={{
@@ -384,21 +592,21 @@ export default function Leaderboard({ user, challenges }) {
             )}
           </div>
           <div style={{ fontSize: "12px", color: "#666" }}>
-            {activeChallenge.description}
+            {viewData.challengeDescription}
           </div>
         </div>
       )}
 
       {loading && <p>Loading leaderboard...</p>}
 
-      {!loading && activeChallenge && entries.length === 0 && (
+      {!loading && viewData.challengeName && viewData.entries.length === 0 && (
         <p style={{ color: "#999" }}>No stats yet for this challenge.</p>
       )}
 
-      {!loading && activeChallenge && entries.length > 0 && (
+      {!loading && viewData.challengeName && viewData.entries.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           {/* TEAM STANDINGS - Only show for team challenges */}
-          {isTeamChallenge && teamStandings.length > 0 && (
+          {isTeamChallenge && sortedTeamStandings.length > 0 && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                 <h3 style={{ margin: 0 }}>Team Standings</h3>
@@ -555,8 +763,8 @@ export default function Leaderboard({ user, challenges }) {
             </div>
           )}
 
-          {/* TEAM FILTER - Only show for team challenges */}
-          {isTeamChallenge && teams.length > 0 && (
+          {/* TEAM FILTER - Only show for team challenges and current view */}
+          {viewMode === "current" && isTeamChallenge && teams.length > 0 && (
             <div>
               <label
                 style={{
@@ -593,7 +801,7 @@ export default function Leaderboard({ user, challenges }) {
             <h3 style={{ marginBottom: "8px" }}>
               Top 10 by{" "}
               {isPlank ? "Total Plank Time (seconds)" : "Total Squat Reps"}
-              {isTeamChallenge && selectedTeamFilter !== "all" &&
+              {viewMode === "current" && isTeamChallenge && selectedTeamFilter !== "all" &&
                 ` - ${teams.find((t) => t.id === selectedTeamFilter)?.name || ""}`}
             </h3>
             <div
@@ -648,7 +856,7 @@ export default function Leaderboard({ user, challenges }) {
                     const teamInfo = getTeamInfo(row.teamId);
                     return (
                       <tr
-                        key={row.id}
+                        key={row.id || idx}
                         style={{
                           backgroundColor:
                             row.userId === user?.uid ? "#e8f5e9" : "white",
@@ -702,7 +910,7 @@ export default function Leaderboard({ user, challenges }) {
           <div>
             <h3 style={{ marginBottom: "8px" }}>
               Top 5 by Best Single Day
-              {isTeamChallenge && selectedTeamFilter !== "all" &&
+              {viewMode === "current" && isTeamChallenge && selectedTeamFilter !== "all" &&
                 ` - ${teams.find((t) => t.id === selectedTeamFilter)?.name || ""}`}
             </h3>
             <div
@@ -757,7 +965,7 @@ export default function Leaderboard({ user, challenges }) {
                     const teamInfo = getTeamInfo(row.teamId);
                     return (
                       <tr
-                        key={row.id}
+                        key={row.id || idx}
                         style={{
                           backgroundColor:
                             row.userId === user?.uid ? "#e8f5e9" : "white",
