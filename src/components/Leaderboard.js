@@ -1,7 +1,7 @@
 // src/components/Leaderboard.js
 import React, { useEffect, useState, useRef } from "react";
 import { db } from "../firebase";
-import { collection, query, where, getDocs, orderBy, limit } from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -92,22 +92,29 @@ export default function Leaderboard({ user, challenges }) {
     }
   }, [activeChallenge, teams, viewMode]);
 
-  // NEW: Load leaderboard history
+  // NEW: Load leaderboard history - FIXED to avoid composite index
   const loadLeaderboardHistory = async () => {
     setLoadingHistory(true);
     try {
+      // Query without orderBy to avoid composite index requirement
       const q = query(
         collection(db, "leaderboardHistory"),
-        where("challengeType", "==", movementType),
-        orderBy("archivedAt", "desc"),
-        limit(2)
+        where("challengeType", "==", movementType)
       );
       const snapshot = await getDocs(q);
       
-      const archives = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      // Get all archives and sort client-side by archivedAt
+      const archives = snapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        .sort((a, b) => {
+          const aTime = a.archivedAt?.toMillis ? a.archivedAt.toMillis() : 0;
+          const bTime = b.archivedAt?.toMillis ? b.archivedAt.toMillis() : 0;
+          return bTime - aTime; // Descending (newest first)
+        })
+        .slice(0, 2); // Take only the most recent 2
 
       setHistoryData({
         previous1: archives[0] || null,
