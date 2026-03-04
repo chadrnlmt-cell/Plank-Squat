@@ -72,6 +72,46 @@ export default function ChallengeCard({ challenge, onJoin, alreadyJoined }) {
     console.error("Date error:", e);
   }
 
+  // Format date range for challenge duration
+  const formatDateRange = () => {
+    try {
+      let startDate;
+      if (challenge.startDate?.toDate) {
+        startDate = challenge.startDate.toDate();
+      } else if (challenge.startDate) {
+        startDate = new Date(challenge.startDate);
+      } else {
+        return "Duration not set";
+      }
+
+      const numberOfDays = challenge.numberOfDays || 0;
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + numberOfDays - 1);
+
+      const options = { year: 'numeric', month: 'long', day: 'numeric' };
+      const startStr = startDate.toLocaleDateString('en-US', options);
+      const endStr = endDate.toLocaleDateString('en-US', options);
+
+      return `${startStr} - ${endStr}`;
+    } catch (e) {
+      console.error("Error formatting date range:", e);
+      return "Duration not available";
+    }
+  };
+
+  // Calculate final value
+  const calculateFinalValue = () => {
+    const startingValue = challenge.startingValue || 0;
+    const incrementPerDay = challenge.incrementPerDay || 0;
+    const numberOfDays = challenge.numberOfDays || 0;
+    return startingValue + (numberOfDays - 1) * incrementPerDay;
+  };
+
+  // Get unit abbreviation
+  const getUnit = () => {
+    return challenge.type === "plank" ? "sec" : "reps";
+  };
+
   return (
     <>
       <div
@@ -111,7 +151,7 @@ export default function ChallengeCard({ challenge, onJoin, alreadyJoined }) {
           </div>
         )}
 
-        <h3 style={{ margin: "0 0 10px 0", color: "#333", paddingRight: alreadyJoined ? "110px" : "0" }}>
+        <h3 style={{ margin: "0 0 10px 0", color: "#333", fontWeight: "bold", paddingRight: alreadyJoined ? "110px" : "0" }}>
           {challenge.name}
           {isTeamChallenge && (
             <span
@@ -134,6 +174,43 @@ export default function ChallengeCard({ challenge, onJoin, alreadyJoined }) {
         <p style={{ margin: "5px 0", color: "#999", fontSize: "13px" }}>
           {challenge.numberOfDays} days • Starts {startDateDisplay}
         </p>
+
+        {/* Challenge Details Section */}
+        <div
+          style={{
+            marginTop: "12px",
+            padding: "12px",
+            border: "1px solid #ddd",
+            borderRadius: "5px",
+            backgroundColor: alreadyJoined ? "#f1f8f4" : "#f9f9f9",
+            fontSize: "13px",
+          }}
+        >
+          {/* Row 1: Duration and Days */}
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+            <span style={{ color: "#555" }}>
+              <strong>Duration:</strong> {formatDateRange()}
+            </span>
+            <span style={{ color: "#555" }}>
+              <strong>Days:</strong> {challenge.numberOfDays}
+            </span>
+          </div>
+
+          {/* Row 2: Starting and Final */}
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+            <span style={{ color: "#555" }}>
+              <strong>Starting:</strong> {challenge.startingValue} {getUnit()}
+            </span>
+            <span style={{ color: "#555" }}>
+              <strong>Final:</strong> {calculateFinalValue()} {getUnit()}
+            </span>
+          </div>
+
+          {/* Row 3: Increase (centered) */}
+          <div style={{ textAlign: "center", color: "#555" }}>
+            <strong>Increase:</strong> +{challenge.incrementPerDay} {getUnit()} per day
+          </div>
+        </div>
 
         {alreadyJoined ? (
           <div
