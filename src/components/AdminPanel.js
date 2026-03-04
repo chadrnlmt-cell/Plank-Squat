@@ -42,7 +42,7 @@ export default function AdminPanel({ user }) {
     startingValue: 60,
     incrementPerDay: 5,
     isActive: true,
-    isTeamChallenge: false, // NEW!
+    isTeamChallenge: false,
   };
 
   const [formData, setFormData] = useState(defaultFormState);
@@ -51,7 +51,6 @@ export default function AdminPanel({ user }) {
   function dateFromYMD(ymd) {
     if (!ymd) return null;
     const [year, month, day] = ymd.split("-").map((v) => parseInt(v, 10));
-    // month is 0-based in JS Date
     return new Date(year, month - 1, day, 0, 0, 0, 0);
   }
 
@@ -126,7 +125,7 @@ export default function AdminPanel({ user }) {
         startingValue: parseInt(formData.startingValue, 10),
         incrementPerDay: parseInt(formData.incrementPerDay, 10),
         isActive: formData.isActive,
-        isTeamChallenge: formData.isTeamChallenge, // NEW!
+        isTeamChallenge: formData.isTeamChallenge,
         createdAt: Timestamp.now(),
         createdBy: user.email,
         startDate: Timestamp.fromDate(startDateObj),
@@ -170,7 +169,7 @@ export default function AdminPanel({ user }) {
         startingValue: parseInt(editingChallenge.startingValue, 10),
         incrementPerDay: parseInt(editingChallenge.incrementPerDay, 10),
         startDate: Timestamp.fromDate(startDateObj),
-        isTeamChallenge: editingChallenge.isTeamChallenge || false, // NEW!
+        isTeamChallenge: editingChallenge.isTeamChallenge || false,
       });
 
       setEditingChallenge(null);
@@ -182,18 +181,180 @@ export default function AdminPanel({ user }) {
     }
   };
 
+  // NEW: Archive leaderboard before deactivating
+  const archiveLeaderboardBeforeDeactivate = async (challenge) => {
+    try {
+      // Check if challenge has any participants
+      const statsQuery = query(
+        collection(db, "challengeUserStats"),
+        where("challengeId", "==", challenge.id)
+      );
+      const statsSnapshot = await getDocs(statsQuery);
+
+      if (statsSnapshot.empty) {
+        console.log("No participants, skipping archive");
+        return true; // Continue with deactivation
+      }
+
+      // Check if already archived
+      const existingArchiveQuery = query(
+        collection(db, "leaderboardHistory"),
+        where("challengeId", "==", challenge.id)
+      );
+      const existingArchiveSnapshot = await getDocs(existingArchiveQuery);
+
+      if (!existingArchiveSnapshot.empty) {
+        console.log("Already archived, skipping duplicate");
+        return true; // Continue with deactivation
+      }
+
+      // Load teams for team challenge
+      const teamsQuery = query(collection(db, "teams"));
+      const teamsSnapshot = await getDocs(teamsQuery);
+      const teams = teamsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Get all user stats
+      const entries = statsSnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          userId: data.userId || null,
+          displayName: data.displayName || "Anonymous",
+          photoURL: data.photoURL || null,
+          totalSeconds: data.totalSeconds || 0,
+          totalReps: data.totalReps || 0,
+          bestSeconds: data.bestSeconds || 0,
+          bestReps: data.bestReps || 0,
+          firstAchievedAt: data.firstAchievedAt || null,
+          teamId: data.teamId || null,
+        };
+      });
+
+      const isPlank = challenge.type === "plank";
+
+      // Sorting functions
+      const compareTotals = (a, b) => {
+        const aVal = isPlank ? a.totalSeconds : a.totalReps;
+        const bVal = isPlank ? b.totalSeconds : b.totalReps;
+        if (bVal !== aVal) return bVal - aVal;
+        
+        const aTime = a.firstAchievedAt?.toMillis ? a.firstAchievedAt.toMillis() : null;
+        const bTime = b.firstAchievedAt?.toMillis ? b.firstAchievedAt.toMillis() : null;
+        if (aTime && bTime && aTime !== bTime) return aTime - bTime;
+        
+        const nameA = (a.displayName || "").toLowerCase();
+        const nameB = (b.displayName || "").toLowerCase();
+        if (nameA < nameB) return -1;
+        if (nameA > nameB) return 1;
+        return 0;
+      };
+
+      const compareBests = (a, b) => {
+        const aVal = isPlank ? a.bestSeconds : a.bestReps;
+        const bVal = isPlank ? b.bestSeconds : b.bestReps;
+        if (bVal !== aVal) return bVal - aVal;
+        
+        const aTime = a.firstAchievedAt?.toMillis ? a.firstAchievedAt.toMillis() : null;
+        const bTime = b.firstAchievedAt?.toMillis ? b.firstAchievedAt.toMillis() : null;
+        if (aTime && bTime && aTime !== bTime) return aTime - bTime;
+        
+        const nameA = (a.displayName || "").toLowerCase();
+        const nameB = (b.displayName || "").toLowerCase();
+        if (nameA < nameB) return -1;
+        if (nameA > nameB) return 1;
+        return 0;
+      };
+
+      // Get top 10 by total and top 5 by best
+      const topTotal = [...entries].sort(compareTotals).slice(0, 10);
+      const topBest = [...entries].sort(compareBests).slice(0, 5);
+
+      // Calculate team standings if team challenge
+      let teamStandings = [];
+      if (challenge.isTeamChallenge) {
+        const teamTotals = {};
+        entries.forEach(row => {
+          if (row.teamId) {
+            if (!teamTotals[row.teamId]) {
+              teamTotals[row.teamId] = {
+                teamId: row.teamId,
+                totalSeconds: 0,
+                totalReps: 0,
+                memberCount: 0,
+              };
+            }
+            teamTotals[row.teamId].totalSeconds += row.totalSeconds || 0;
+            teamTotals[row.teamId].totalReps += row.totalReps || 0;
+            teamTotals[row.teamId].memberCount += 1;
+          }
+        });
+
+        teamStandings = Object.values(teamTotals).map(t => {
+          const team = teams.find(tm => tm.id === t.teamId);
+          return {
+            ...t,
+            teamName: team?.name || "Unknown Team",
+            teamColor: team?.color || "#999",
+            avgSeconds: t.memberCount > 0 ? Math.round(t.totalSeconds / t.memberCount) : 0,
+            avgReps: t.memberCount > 0 ? Math.round(t.totalReps / t.memberCount) : 0,
+          };
+        });
+      }
+
+      // Calculate end date
+      const startDate = challenge.startDate?.toDate ? challenge.startDate.toDate() : new Date(challenge.startDate);
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + challenge.numberOfDays - 1);
+
+      // Create archive document
+      await addDoc(collection(db, "leaderboardHistory"), {
+        challengeId: challenge.id,
+        challengeName: challenge.name,
+        challengeType: challenge.type,
+        challengeDescription: challenge.description,
+        isTeamChallenge: challenge.isTeamChallenge || false,
+        startDate: challenge.startDate,
+        endDate: Timestamp.fromDate(endDate),
+        numberOfDays: challenge.numberOfDays,
+        archivedAt: Timestamp.now(),
+        archivedBy: user.email,
+        topTotal,
+        topBest,
+        teamStandings,
+      });
+
+      console.log("Leaderboard archived successfully");
+      return true;
+    } catch (error) {
+      console.error("Error archiving leaderboard:", error);
+      alert("Error archiving leaderboard. Deactivation cancelled.");
+      return false;
+    }
+  };
+
   const handleDeactivate = (challenge) => {
     setConfirmAction({
       type: "deactivate",
       challengeId: challenge.id,
-      message: `Deactivate ${challenge.name}? Users will no longer see it in Available tab. Are you sure?`,
+      challenge: challenge,
+      message: `Deactivate ${challenge.name}? This will archive the leaderboard and hide the challenge from users. Are you sure?`,
     });
   };
 
-  const confirmDeactivate = async (challengeId) => {
+  const confirmDeactivate = async (challengeId, challenge) => {
     try {
-      const current = challenges.find((c) => c.id === challengeId);
-      const newStatus = !current?.isActive;
+      // Archive leaderboard before deactivating if challenge is currently active
+      if (challenge.isActive) {
+        const archiveSuccess = await archiveLeaderboardBeforeDeactivate(challenge);
+        if (!archiveSuccess) {
+          return; // Cancel deactivation if archive failed
+        }
+      }
+
+      // Now deactivate the challenge
+      const newStatus = !challenge.isActive;
       await updateDoc(doc(db, "challenges", challengeId), {
         isActive: newStatus,
       });
@@ -274,7 +435,6 @@ export default function AdminPanel({ user }) {
     }
 
     try {
-      // 1) Get all userChallenges for this challenge and reset progress fields
       const userChallengesQuery = query(
         collection(db, "userChallenges"),
         where("challengeId", "==", challengeId)
@@ -289,12 +449,11 @@ export default function AdminPanel({ user }) {
           lastCompletedDate: null,
           status: "active",
           missedDaysCount: 0,
-          joinedAt: null, // clear join time so user data looks fresh
+          joinedAt: null,
         });
       });
       await batch.commit();
 
-      // 2) Delete all attempts for this challenge (wipe history & missed days)
       const attemptsQuery = query(
         collection(db, "attempts"),
         where("challengeId", "==", challengeId)
@@ -304,8 +463,6 @@ export default function AdminPanel({ user }) {
       attemptsSnapshot.forEach((docSnap) => batch2.delete(docSnap.ref));
       await batch2.commit();
 
-      // 3) Delete all leaderboard stats for this challenge
-      //    (challengeUserStats docs -> clears totals/bests for this challenge)
       const statsQuery = query(
         collection(db, "challengeUserStats"),
         where("challengeId", "==", challengeId)
@@ -348,11 +505,10 @@ export default function AdminPanel({ user }) {
       id: challenge.id,
       ...challenge,
       startDate: formattedDate,
-      isTeamChallenge: challenge.isTeamChallenge || false, // NEW!
+      isTeamChallenge: challenge.isTeamChallenge || false,
     });
   };
 
-  // Load missed days for a given challenge grouped by day
   const loadMissedDaysForChallenge = async (challengeId) => {
     try {
       setMissedLoading(true);
@@ -385,7 +541,6 @@ export default function AdminPanel({ user }) {
     }
   };
 
-  // ACCESS DENIED for non-admins
   if (!isAdmin) {
     return (
       <div
@@ -409,7 +564,6 @@ export default function AdminPanel({ user }) {
     );
   }
 
-  // ADMIN PANEL with TABS
   return (
     <div
       style={{
@@ -420,7 +574,6 @@ export default function AdminPanel({ user }) {
     >
       <h1>Admin Panel</h1>
 
-      {/* TAB NAVIGATION */}
       <div
         style={{
           display: "flex",
@@ -469,14 +622,10 @@ export default function AdminPanel({ user }) {
         </button>
       </div>
 
-      {/* TAB CONTENT */}
       {activeAdminTab === "teams" ? (
         <TeamManagement user={user} />
       ) : (
         <>
-          {/* CHALLENGES TAB CONTENT (all existing challenge code) */}
-
-          {/* CREATE NEW CHALLENGE BUTTON */}
           <button
             onClick={() => setShowCreateForm(!showCreateForm)}
             style={{
@@ -493,7 +642,6 @@ export default function AdminPanel({ user }) {
             {showCreateForm ? "Cancel" : "+ Create New Challenge"}
           </button>
 
-          {/* CREATE FORM */}
           {showCreateForm && (
             <div
               style={{
@@ -715,7 +863,6 @@ export default function AdminPanel({ user }) {
                   </label>
                 </div>
 
-                {/* NEW: Is Team Challenge toggle */}
                 <div>
                   <label
                     style={{
@@ -760,7 +907,6 @@ export default function AdminPanel({ user }) {
             </div>
           )}
 
-          {/* EDIT FORM (full-screen modal) - ADD isTeamChallenge toggle here too */}
           {editingChallenge && (
             <div
               style={{
@@ -999,7 +1145,6 @@ export default function AdminPanel({ user }) {
                     />
                   </div>
 
-                  {/* NEW: Is Team Challenge toggle in edit form */}
                   <div>
                     <label
                       style={{
@@ -1067,7 +1212,6 @@ export default function AdminPanel({ user }) {
             </div>
           )}
 
-          {/* CONFIRMATION MODAL */}
           {confirmAction && (
             <div
               style={{
@@ -1141,7 +1285,7 @@ export default function AdminPanel({ user }) {
                       if (confirmAction.type === "confirmEdit") {
                         confirmEdit();
                       } else if (confirmAction.type === "deactivate") {
-                        confirmDeactivate(confirmAction.challengeId);
+                        confirmDeactivate(confirmAction.challengeId, confirmAction.challenge);
                       } else if (confirmAction.type === "delete") {
                         confirmDelete(confirmAction.challengeId);
                       } else if (confirmAction.type === "reset") {
@@ -1206,10 +1350,6 @@ export default function AdminPanel({ user }) {
             </div>
           )}
 
-          {/* Rest of the challenges list rendering stays the same... */}
-          {/* (keeping the active/inactive challenges display code unchanged) */}
-          
-          {/* CHALLENGES LIST */}
           {loading ? (
             <div style={{ textAlign: "center", padding: "40px" }}>
               <p>Loading challenges...</p>
@@ -1229,7 +1369,6 @@ export default function AdminPanel({ user }) {
             </div>
           ) : (
             <>
-              {/* Display active and inactive challenges with Team Challenge badge */}
               <div>
                 <h2 style={{ marginTop: "30px", marginBottom: "15px" }}>
                   Active Challenges
@@ -1394,7 +1533,6 @@ export default function AdminPanel({ user }) {
                 )}
               </div>
 
-              {/* Inactive challenges section - similar pattern */}
               <div>
                 <h2
                   style={{
@@ -1568,7 +1706,6 @@ export default function AdminPanel({ user }) {
             </>
           )}
 
-          {/* MISSED DAYS TABLE */}
           <div
             style={{
               marginTop: "40px",
