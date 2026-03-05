@@ -16,12 +16,13 @@ import {
 import PlankTimer from "./components/PlankTimer";
 import SquatLogger from "./components/SquatLogger";
 import ChallengeCard from "./components/ChallengeCard";
+import ChallengeEndedCard from "./components/ChallengeEndedCard";
 import TabNavigation from "./components/TabNavigation";
 import AdminPanel from "./components/AdminPanel";
 import Leaderboard from "./components/Leaderboard";
 import Profile from "./components/Profile";
 import Banner from "./components/Banner";
-import { getPhoenixDate, getChallengeDayFromStart, formatDateShort } from "./utils";
+import { getPhoenixDate, getChallengeDayFromStart, formatDateShort, isChallengeEnded } from "./utils";
 import "./styles.css";
 
 export default function App() {
@@ -99,15 +100,11 @@ export default function App() {
         ...snap.data(),
       }));
 
-      // Filter out challenges that have fully finished (global day > numberOfDays)
+      // Filter out challenges that have ended
       const filtered = all.filter((ch) => {
         if (!ch.startDate || !ch.numberOfDays) return false;
-        const globalDay = getChallengeDayFromStart(
-          ch.startDate,
-          ch.numberOfDays
-        );
-        if (globalDay === 0) return true; // not started yet, show
-        return globalDay <= ch.numberOfDays; // hide if fully finished
+        // Use new isChallengeEnded helper
+        return !isChallengeEnded(ch.startDate, ch.numberOfDays);
       });
 
       setChallenges(filtered);
@@ -116,7 +113,7 @@ export default function App() {
     }
   };
 
-  // Sync helper (unchanged from your version)
+  // Sync helper - now runs final sync for ended challenges
   const syncUserChallengeWithCalendar = async (docSnap, challengeData) => {
     const userChallengeData = docSnap.data();
 
@@ -162,7 +159,10 @@ export default function App() {
       }
     }
 
-    if (rawGlobalDay > numberOfDays && status !== "completed") {
+    // Check if challenge has ended
+    const challengeHasEnded = isChallengeEnded(challengeData.startDate, numberOfDays);
+
+    if ((rawGlobalDay > numberOfDays || challengeHasEnded) && status !== "completed") {
       for (
         let d = Math.max(todayGlobalDay, prevLastCompleted + 1);
         d <= numberOfDays;
@@ -328,6 +328,12 @@ export default function App() {
         return;
       }
 
+      // Check if challenge has ended
+      if (isChallengeEnded(challenge.startDate, challenge.numberOfDays)) {
+        setBanner({ message: "This challenge has ended - check back for new challenges!", type: "info" });
+        return;
+      }
+
       const globalDay = getChallengeDayFromStart(
         challenge.startDate,
         challenge.numberOfDays
@@ -357,6 +363,12 @@ export default function App() {
         lastCompletedDate: null,
         status: "active",
         missedDaysCount: 0,
+        totalDaysAttempted: 0,
+        successfulDaysCount: 0,
+        bestPerformance: 0,
+        averagePerformance: 0,
+        totalSuccessfulSeconds: 0,
+        totalSuccessfulReps: 0,
       });
 
       await loadUserChallenges();
@@ -368,6 +380,12 @@ export default function App() {
   };
 
   const handleStartChallenge = (userChallenge) => {
+    // Check if challenge has ended
+    if (isChallengeEnded(userChallenge.challengeDetails.startDate, userChallenge.challengeDetails.numberOfDays)) {
+      setBanner({ message: "This challenge has ended. View your final stats below!", type: "info" });
+      return;
+    }
+
     if (userChallenge.lastCompletedDate) {
       const lastCompleted = userChallenge.lastCompletedDate.toDate();
       const today = getPhoenixDate();
@@ -455,6 +473,7 @@ export default function App() {
           challengeId={challengeId}
           userId={user.uid}
           user={user}
+          displayName={profileName || user.displayName || ""}
           teamId={teamId || null}
           numberOfDays={challengeDetails.numberOfDays}
           onComplete={handleChallengeComplete}
@@ -510,6 +529,11 @@ export default function App() {
 
   // Helper function to check if challenge can be started today
   const canStartToday = (userChallenge) => {
+    // Check if challenge has ended
+    if (isChallengeEnded(userChallenge.challengeDetails.startDate, userChallenge.challengeDetails.numberOfDays)) {
+      return false;
+    }
+
     if (!userChallenge.lastCompletedDate) return true;
 
     const lastCompleted = userChallenge.lastCompletedDate.toDate();
@@ -519,6 +543,36 @@ export default function App() {
     today.setHours(0, 0, 0, 0);
 
     return lastCompleted.getTime() !== today.getTime();
+  };
+
+  // Helper to get visible ended challenges (max 2 per type)
+  const getVisibleEndedChallenges = (allChallenges) => {
+    const endedChallenges = allChallenges.filter(
+      (uc) =>
+        uc.status === "completed" &&
+        isChallengeEnded(uc.challengeDetails.startDate, uc.challengeDetails.numberOfDays)
+    );
+
+    // Separate by type
+    const plankChallenges = endedChallenges
+      .filter((uc) => uc.challengeDetails.type === "plank")
+      .sort((a, b) => {
+        const aEnd = a.lastCompletedDate?.toMillis?.() || 0;
+        const bEnd = b.lastCompletedDate?.toMillis?.() || 0;
+        return bEnd - aEnd; // Most recent first
+      })
+      .slice(0, 2); // Keep only 2 most recent
+
+    const squatChallenges = endedChallenges
+      .filter((uc) => uc.challengeDetails.type === "squat")
+      .sort((a, b) => {
+        const aEnd = a.lastCompletedDate?.toMillis?.() || 0;
+        const bEnd = b.lastCompletedDate?.toMillis?.() || 0;
+        return bEnd - aEnd; // Most recent first
+      })
+      .slice(0, 2); // Keep only 2 most recent
+
+    return [...plankChallenges, ...squatChallenges];
   };
 
   // Main App (Logged In)
@@ -609,26 +663,50 @@ export default function App() {
         {activeTab === "active" && (
           <div>
             <h2>My Active Challenges</h2>
-            {userChallenges.filter((uc) => uc.status === "active").length ===
-            0 ? (
-              <p style={{ color: "#999" }}>
-                Ready to start? Check out Available challenges!
-              </p>
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "15px",
-                }}
-              >
-                {userChallenges
-                  .filter((uc) => uc.status === "active")
-                  .map((userChallenge) => {
+            {(() => {
+              const activeChallenges = userChallenges.filter((uc) => uc.status === "active");
+              const endedChallenges = getVisibleEndedChallenges(userChallenges);
+              const hasAnyChallenges = activeChallenges.length > 0 || endedChallenges.length > 0;
+
+              if (!hasAnyChallenges) {
+                return (
+                  <p style={{ color: "#999" }}>
+                    Ready to start? Check out Available challenges!
+                  </p>
+                );
+              }
+
+              return (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "15px",
+                  }}
+                >
+                  {/* Active challenges */}
+                  {activeChallenges.map((userChallenge) => {
+                    const challengeHasEnded = isChallengeEnded(
+                      userChallenge.challengeDetails.startDate,
+                      userChallenge.challengeDetails.numberOfDays
+                    );
+
+                    // If challenge has ended, show ended card
+                    if (challengeHasEnded) {
+                      return (
+                        <ChallengeEndedCard
+                          key={userChallenge.userChallengeId}
+                          userChallenge={userChallenge}
+                        />
+                      );
+                    }
+
+                    // Otherwise show normal card
                     const canStart = canStartToday(userChallenge);
                     const restCount = userChallenge.missedDaysCount || 0;
                     const redosRemaining = 3 - attemptNumber;
-                    const isFinalDay = userChallenge.currentDay === userChallenge.challengeDetails.numberOfDays;
+                    const isFinalDay =
+                      userChallenge.currentDay === userChallenge.challengeDetails.numberOfDays;
 
                     return (
                       <div
@@ -644,7 +722,7 @@ export default function App() {
                           {userChallenge.challengeDetails.name}
                         </h3>
                         <p style={{ margin: "5px 0", color: "#666" }}>
-                          Day {userChallenge.currentDay} challenge of{" "}
+                          Day {userChallenge.currentDay} of{" "}
                           {userChallenge.challengeDetails.numberOfDays}
                         </p>
                         <p style={{ margin: "5px 0", color: "#666" }}>
@@ -655,18 +733,19 @@ export default function App() {
                         </p>
 
                         {attemptNumber > 1 && canStart && (
-                          <p 
-                            style={{ 
-                              margin: "10px 0 5px 0", 
+                          <p
+                            style={{
+                              margin: "10px 0 5px 0",
                               color: attemptNumber === 3 ? "#d32f2f" : "#f57c00",
                               fontWeight: "bold",
-                              fontSize: "14px"
+                              fontSize: "14px",
                             }}
                           >
-                            {attemptNumber === 3 
+                            {attemptNumber === 3
                               ? "⚠️ Final do-over remaining"
-                              : `${redosRemaining} ${redosRemaining === 1 ? "do-over" : "do-overs"} remaining`
-                            }
+                              : `${redosRemaining} ${
+                                  redosRemaining === 1 ? "do-over" : "do-overs"
+                                } remaining`}
                           </p>
                         )}
 
@@ -698,10 +777,9 @@ export default function App() {
                               cursor: "pointer",
                             }}
                           >
-                            {isFinalDay 
+                            {isFinalDay
                               ? `Start Day ${userChallenge.currentDay} (Final Day) - Make it count! 🎯`
-                              : `Start Day ${userChallenge.currentDay} challenge 💪`
-                            }
+                              : `Start Day ${userChallenge.currentDay} 💪`}
                             {attemptNumber > 1 && ` (Attempt ${attemptNumber})`}
                           </button>
                         ) : (
@@ -718,16 +796,26 @@ export default function App() {
                             }}
                           >
                             {isFinalDay
-                              ? `✓ Challenge Complete! You crushed all ${userChallenge.challengeDetails.numberOfDays} days! 🎉`
-                              : "✓ Today's challenge crushed! Next up tomorrow at midnight MST"
-                            }
+                              ? `✓ Challenge Complete! You crushed all ${
+                                  userChallenge.challengeDetails.numberOfDays
+                                } days! 🎉`
+                              : "✓ Today's challenge crushed! Next up tomorrow at midnight MST"}
                           </div>
                         )}
                       </div>
                     );
                   })}
-              </div>
-            )}
+
+                  {/* Ended challenges (max 2 per type) */}
+                  {endedChallenges.map((userChallenge) => (
+                    <ChallengeEndedCard
+                      key={userChallenge.userChallengeId}
+                      userChallenge={userChallenge}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )}
 
