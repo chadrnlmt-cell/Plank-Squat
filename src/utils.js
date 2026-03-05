@@ -46,6 +46,39 @@ export function getChallengeDayFromStart(startDate, numberOfDays) {
   return dayDiff + 1;
 }
 
+/**
+ * Check if a challenge has ended.
+ * Challenge ends at midnight on the final day (not the day after).
+ * 
+ * Example: 30-day challenge starting March 1st ends at midnight going into March 31st.
+ * 
+ * @param {Timestamp|Date} startDate - Challenge start date
+ * @param {number} numberOfDays - Total days in challenge
+ * @returns {boolean} - True if challenge has ended
+ */
+export function isChallengeEnded(startDate, numberOfDays) {
+  if (!startDate || !numberOfDays || numberOfDays <= 0) return false;
+
+  let start;
+  if (startDate.toDate) {
+    start = startDate.toDate();
+  } else {
+    start = new Date(startDate);
+  }
+
+  // Calculate end date: start + numberOfDays (this is the day AFTER the final day)
+  const endDate = new Date(start);
+  endDate.setDate(endDate.getDate() + numberOfDays);
+  endDate.setHours(0, 0, 0, 0);
+
+  // Get current Phoenix time
+  const now = getPhoenixDate();
+  now.setHours(0, 0, 0, 0);
+
+  // Challenge has ended if we're at or past the end date
+  return now.getTime() >= endDate.getTime();
+}
+
 export function formatDateShort(date) {
   if (!date) return "";
   const d = date instanceof Date ? date : new Date(date);
