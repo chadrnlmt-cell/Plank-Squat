@@ -7,6 +7,7 @@ import {
   addDoc,
   collection,
   Timestamp,
+  getDoc,
 } from "firebase/firestore";
 import { getPhoenixDate } from "../utils";
 import { updateSquatStatsOnSuccess } from "../statsHelpers";
@@ -18,8 +19,8 @@ export default function SquatLogger({
   challengeId,
   userId,
   user,
-  displayName, // profile name from App
-  teamId, // NEW: pass teamId from parent
+  displayName,
+  teamId,
   numberOfDays,
   onComplete,
   onCancel,
@@ -39,6 +40,23 @@ export default function SquatLogger({
     try {
       const success = actualValue >= targetReps;
 
+      // Get current userChallenge data to update stats
+      const userChallengeRef = doc(db, "userChallenges", userChallengeId);
+      const userChallengeSnap = await getDoc(userChallengeRef);
+      const currentData = userChallengeSnap.data() || {};
+
+      // Calculate new stats
+      const currentTotalDays = currentData.totalDaysAttempted || 0;
+      const currentSuccessfulDays = currentData.successfulDaysCount || 0;
+      const currentBest = currentData.bestPerformance || 0;
+      const currentTotalReps = currentData.totalSuccessfulReps || 0;
+
+      const newTotalDays = currentTotalDays + 1;
+      const newSuccessfulDays = success ? currentSuccessfulDays + 1 : currentSuccessfulDays;
+      const newBest = Math.max(currentBest, success ? actualValue : 0);
+      const newTotalReps = currentTotalReps + (success ? actualValue : 0);
+      const newAverage = newSuccessfulDays > 0 ? Math.round(newTotalReps / newSuccessfulDays) : 0;
+
       // Log attempt
       await addDoc(collection(db, "attempts"), {
         userId: userId,
@@ -55,11 +73,16 @@ export default function SquatLogger({
       const nextDay = day + 1;
       const isComplete = nextDay > numberOfDays;
 
-      await updateDoc(doc(db, "userChallenges", userChallengeId), {
+      await updateDoc(userChallengeRef, {
         currentDay: nextDay,
         lastCompletedDay: day,
         lastCompletedDate: Timestamp.fromDate(getPhoenixDate()),
         status: isComplete ? "completed" : "active",
+        totalDaysAttempted: newTotalDays,
+        successfulDaysCount: newSuccessfulDays,
+        bestPerformance: newBest,
+        totalSuccessfulReps: newTotalReps,
+        averagePerformance: newAverage,
       });
 
       // Only update stats on successful days, with overrideDisplayName and teamId
@@ -69,7 +92,7 @@ export default function SquatLogger({
           challengeId,
           actualReps: actualValue,
           overrideDisplayName: displayName || undefined,
-          teamId: teamId || null, // NEW: pass teamId for caching
+          teamId: teamId || null,
         });
       }
 
