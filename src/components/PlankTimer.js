@@ -7,6 +7,7 @@ import {
   addDoc,
   collection,
   Timestamp,
+  getDoc,
 } from "firebase/firestore";
 import { getPhoenixDate } from "../utils";
 import { updatePlankStatsOnSuccess } from "../statsHelpers";
@@ -407,6 +408,23 @@ export default function PlankTimer({
 
   const handleLogAttempt = async (actualValue, success) => {
     try {
+      // Get current userChallenge data to update stats
+      const userChallengeRef = doc(db, "userChallenges", userChallengeId);
+      const userChallengeSnap = await getDoc(userChallengeRef);
+      const currentData = userChallengeSnap.data() || {};
+
+      // Calculate new stats
+      const currentTotalDays = currentData.totalDaysAttempted || 0;
+      const currentSuccessfulDays = currentData.successfulDaysCount || 0;
+      const currentBest = currentData.bestPerformance || 0;
+      const currentTotalSeconds = currentData.totalSuccessfulSeconds || 0;
+
+      const newTotalDays = currentTotalDays + 1;
+      const newSuccessfulDays = success ? currentSuccessfulDays + 1 : currentSuccessfulDays;
+      const newBest = Math.max(currentBest, success ? actualValue : 0);
+      const newTotalSeconds = currentTotalSeconds + (success ? actualValue : 0);
+      const newAverage = newSuccessfulDays > 0 ? Math.round(newTotalSeconds / newSuccessfulDays) : 0;
+
       // Log attempt
       await addDoc(collection(db, "attempts"), {
         userId: userId,
@@ -435,18 +453,23 @@ export default function PlankTimer({
       const nextDay = day + 1;
       const isComplete = nextDay > numberOfDays;
 
-      await updateDoc(doc(db, "userChallenges", userChallengeId), {
+      await updateDoc(userChallengeRef, {
         currentDay: nextDay,
         lastCompletedDay: day,
         lastCompletedDate: Timestamp.fromDate(getPhoenixDate()),
         status: isComplete ? "completed" : "active",
+        totalDaysAttempted: newTotalDays,
+        successfulDaysCount: newSuccessfulDays,
+        bestPerformance: newBest,
+        totalSuccessfulSeconds: newTotalSeconds,
+        averagePerformance: newAverage,
       });
 
       // Show completion screen, then auto-return after 5 seconds
       setStage("complete");
       setTimeout(() => {
         onComplete(false); // Pass false - day actually completed, reset attemptNumber
-      }, 5000); // Changed from 2000 to 5000 (5 seconds)
+      }, 5000);
     } catch (error) {
       console.error("Error logging attempt:", error);
       alert("Failed to log attempt: " + (error?.message || "unknown error"));
@@ -456,6 +479,14 @@ export default function PlankTimer({
   const handleFailedAttempt = async () => {
     // Recovery expired or 3rd attempt timeout - log failed attempt AND advance day
     try {
+      // Get current userChallenge data
+      const userChallengeRef = doc(db, "userChallenges", userChallengeId);
+      const userChallengeSnap = await getDoc(userChallengeRef);
+      const currentData = userChallengeSnap.data() || {};
+
+      const currentTotalDays = currentData.totalDaysAttempted || 0;
+      const newTotalDays = currentTotalDays + 1;
+
       await addDoc(collection(db, "attempts"), {
         userId: userId,
         userChallengeId: userChallengeId,
@@ -472,11 +503,12 @@ export default function PlankTimer({
       const nextDay = day + 1;
       const isComplete = nextDay > numberOfDays;
 
-      await updateDoc(doc(db, "userChallenges", userChallengeId), {
+      await updateDoc(userChallengeRef, {
         currentDay: nextDay,
         lastCompletedDay: day,
         lastCompletedDate: Timestamp.fromDate(getPhoenixDate()),
         status: isComplete ? "completed" : "active",
+        totalDaysAttempted: newTotalDays,
       });
 
       setTimeout(() => {
