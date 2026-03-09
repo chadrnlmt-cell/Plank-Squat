@@ -11,6 +11,8 @@ import {
   getDocs,
   updateDoc,
 } from "firebase/firestore";
+import { getAllUserBadges } from "../badgeHelpers";
+import BadgeDisplay from "./BadgeDisplay";
 
 export default function Profile({ user }) {
   const [profileName, setProfileName] = useState(user?.displayName || "");
@@ -29,6 +31,10 @@ export default function Profile({ user }) {
     totalSquats: 0,
     bestSquats: 0,
   });
+
+  // Badge state
+  const [badgesLoading, setBadgesLoading] = useState(true);
+  const [allBadges, setAllBadges] = useState(null);
 
   // Helper: format seconds as Xm Ys
   const formatSeconds = (sec) => {
@@ -124,6 +130,25 @@ export default function Profile({ user }) {
     loadStats();
   }, [user]);
 
+  // Load badges
+  useEffect(() => {
+    const loadBadges = async () => {
+      if (!user) return;
+      setBadgesLoading(true);
+
+      try {
+        const badges = await getAllUserBadges(user.uid);
+        setAllBadges(badges);
+      } catch (err) {
+        console.error("Error loading badges:", err);
+      } finally {
+        setBadgesLoading(false);
+      }
+    };
+
+    loadBadges();
+  }, [user]);
+
   const handleSaveName = async () => {
     if (!user) return;
     const trimmed = profileName.trim();
@@ -186,6 +211,19 @@ export default function Profile({ user }) {
     } finally {
       setIsSavingName(false);
     }
+  };
+
+  // Calculate longest streak across all challenges
+  const getLongestStreak = () => {
+    if (!allBadges || !allBadges.byChallengeId) return 0;
+    let longest = 0;
+    for (const challengeId in allBadges.byChallengeId) {
+      const badgeData = allBadges.byChallengeId[challengeId];
+      if (badgeData.longestStreak > longest) {
+        longest = badgeData.longestStreak;
+      }
+    }
+    return longest;
   };
 
   return (
@@ -283,6 +321,48 @@ export default function Profile({ user }) {
                 <strong>Best squats:</strong> {stats.bestSquats}
               </div>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Total Badges Card */}
+      <div
+        className="card"
+        style={{ textAlign: "left", maxWidth: "500px", margin: "0 auto" }}
+      >
+        <div className="card__body">
+          <h2 style={{ marginTop: 0, marginBottom: "12px" }}>Total Badges</h2>
+
+          {badgesLoading && <p>Loading badges...</p>}
+
+          {!badgesLoading && allBadges && (
+            <>
+              <div
+                style={{
+                  fontSize: "14px",
+                  color: "var(--color-text-secondary)",
+                  marginBottom: "16px",
+                }}
+              >
+                Achievements earned across all challenges
+                {getLongestStreak() > 0 && (
+                  <div style={{ marginTop: "4px", fontWeight: "600", color: "var(--color-text)" }}>
+                    Longest streak: {getLongestStreak()} days 🔥
+                  </div>
+                )}
+              </div>
+              <BadgeDisplay
+                streakBadges={allBadges.allStreakBadges}
+                currentStreak={0} // Don't show current streak in total view
+                doubleBadgeCount={allBadges.allMultipliers.double}
+                tripleBadgeCount={allBadges.allMultipliers.triple}
+                quadrupleBadgeCount={allBadges.allMultipliers.quadruple}
+                timeBadges={allBadges.allTimeBadges}
+                totalPlankSeconds={0} // Don't show time progress in total view
+                showProgress={false}
+                compact={false}
+              />
+            </>
           )}
         </div>
       </div>
