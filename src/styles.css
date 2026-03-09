@@ -2,3 +2,220 @@
   font-family: sans-serif;
   text-align: center;
 }
+
+/* Badge Styles */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  background: white;
+  border: 2px solid currentColor;
+  transition: transform 0.2s;
+  white-space: nowrap;
+}
+
+.badge:hover {
+  transform: translateY(-2px);
+}
+
+/* Streak badge colors */
+.badge-streak-7 {
+  color: #ff6348;
+  border-color: #ff6348;
+}
+
+.badge-streak-14 {
+  color: #ff4757;
+  border-color: #ff4757;
+}
+
+.badge-streak-21 {
+  color: #d63031;
+  border-color: #d63031;
+}
+
+.badge-streak-28 {
+  color: #c0392b;
+  border-color: #c0392b;
+}
+
+/* Multiplier badge colors */
+.badge-double {
+  color: #f39c12;
+  border-color: #f39c12;
+}
+
+.badge-triple {
+  color: #e67e22;
+  border-color: #e67e22;
+}
+
+.badge-quadruple {
+  color: #d35400;
+  border-color: #d35400;
+}
+
+/* Time badge colors - different shades of blue/purple */
+.badge-time-1 {
+  color: #3498db;
+  border-color: #3498db;
+}
+
+.badge-time-2 {
+  color: #2980b9;
+  border-color: #2980b9;
+}
+
+.badge-time-3 {
+  color: #1e3799;
+  border-color: #1e3799;
+}
+
+.badge-time-4 {
+  color: #6c5ce7;
+  border-color: #6c5ce7;
+}
+
+.badge-time-5,
+.badge-time-6,
+.badge-time-7,
+.badge-time-8,
+.badge-time-9,
+.badge-time-10 {
+  color: #5f27cd;
+  border-color: #5f27cd;
+}
+
+/* Badge count indicator */
+.badge-count {
+  margin-left: 4px;
+  background: currentColor;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Progress bar */
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50 0%, #22c55e 100%);
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+/* Badge Celebration Modal */
+.badge-celebration {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeIn 0.3s ease;
+}
+
+.badge-celebration-content {
+  text-align: center;
+  color: white;
+  z-index: 10000;
+  animation: scaleIn 0.5s ease;
+}
+
+.badge-celebration-icon {
+  font-size: 120px;
+  margin-bottom: 20px;
+  animation: bounce 1s ease infinite;
+}
+
+.badge-celebration-title {
+  font-size: 36px;
+  font-weight: bold;
+  margin: 0 0 12px 0;
+  color: white;
+}
+
+.badge-celebration-text {
+  font-size: 24px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Confetti animation */
+.confetti {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.confetti-piece {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  top: -10px;
+  opacity: 0;
+  animation: confettiFall linear forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes confettiFall {
+  0% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(100vh) rotate(720deg);
+  }
+}
