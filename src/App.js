@@ -22,6 +22,8 @@ import AdminPanel from "./components/AdminPanel";
 import Leaderboard from "./components/Leaderboard";
 import Profile from "./components/Profile";
 import Banner from "./components/Banner";
+import BadgeDisplay from "./components/BadgeDisplay";
+import { getChallengeBadges } from "./badgeHelpers";
 import { getPhoenixDate, getChallengeDayFromStart, formatDateShort, isChallengeEnded } from "./utils";
 import "./styles.css";
 
@@ -44,6 +46,9 @@ export default function App() {
 
   // NEW: app-level profile name from Firestore users/<uid>
   const [profileName, setProfileName] = useState("");
+
+  // Badge data for active challenges
+  const [challengeBadges, setChallengeBadges] = useState({});
 
   // Listen for auth state changes
   useEffect(() => {
@@ -87,6 +92,26 @@ export default function App() {
       loadUserChallenges();
     }
   }, [user]);
+
+  // Load badge data for active challenges
+  useEffect(() => {
+    const loadBadges = async () => {
+      if (!user || activeTab !== "active") return;
+
+      const badgeData = {};
+      for (const uc of userChallenges) {
+        if (uc.status === "active") {
+          const badges = await getChallengeBadges(user.uid, uc.challengeId);
+          if (badges) {
+            badgeData[uc.challengeId] = badges;
+          }
+        }
+      }
+      setChallengeBadges(badgeData);
+    };
+
+    loadBadges();
+  }, [user, userChallenges, activeTab]);
 
   const loadChallenges = async () => {
     try {
@@ -306,6 +331,7 @@ export default function App() {
       setAttemptNumber(1);
       setShowRedoMessage(false);
       setBanner(null);
+      setChallengeBadges({});
     } catch (error) {
       console.error("Error signing out:", error);
     }
@@ -721,6 +747,7 @@ export default function App() {
                     const redosRemaining = 3 - attemptNumber;
                     const isFinalDay =
                       userChallenge.currentDay === userChallenge.challengeDetails.numberOfDays;
+                    const badges = challengeBadges[userChallenge.challengeId];
 
                     return (
                       <div
@@ -745,6 +772,41 @@ export default function App() {
                         <p style={{ margin: "5px 0", color: "#666" }}>
                           Rest days: {restCount}
                         </p>
+
+                        {/* Badge Display */}
+                        {badges && (
+                          <div
+                            style={{
+                              marginTop: "16px",
+                              padding: "16px",
+                              backgroundColor: "#f9fafb",
+                              borderRadius: "8px",
+                              border: "1px solid #e5e7eb",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "14px",
+                                fontWeight: "600",
+                                marginBottom: "12px",
+                                color: "var(--color-text)",
+                              }}
+                            >
+                              📛 Challenge Badges
+                            </div>
+                            <BadgeDisplay
+                              streakBadges={badges.streakBadges || []}
+                              currentStreak={badges.currentStreak || 0}
+                              doubleBadgeCount={badges.doubleBadgeCount || 0}
+                              tripleBadgeCount={badges.tripleBadgeCount || 0}
+                              quadrupleBadgeCount={badges.quadrupleBadgeCount || 0}
+                              timeBadges={badges.timeBadges || []}
+                              totalPlankSeconds={badges.totalPlankSeconds || 0}
+                              showProgress={true}
+                              compact={true}
+                            />
+                          </div>
+                        )}
 
                         {attemptNumber > 1 && canStart && (
                           <p
