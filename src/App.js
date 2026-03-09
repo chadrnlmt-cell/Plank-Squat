@@ -386,6 +386,12 @@ export default function App() {
       return;
     }
 
+    // Check if player has completed all their days
+    if (userChallenge.lastCompletedDay === userChallenge.challengeDetails.numberOfDays) {
+      setBanner({ message: "✓ Challenge Complete! You crushed all " + userChallenge.challengeDetails.numberOfDays + " days! 🎉", type: "info" });
+      return;
+    }
+
     if (userChallenge.lastCompletedDate) {
       const lastCompleted = userChallenge.lastCompletedDate.toDate();
       const today = getPhoenixDate();
@@ -534,6 +540,11 @@ export default function App() {
       return false;
     }
 
+    // Check if player has completed all their days
+    if (userChallenge.lastCompletedDay === userChallenge.challengeDetails.numberOfDays) {
+      return false;
+    }
+
     if (!userChallenge.lastCompletedDate) return true;
 
     const lastCompleted = userChallenge.lastCompletedDate.toDate();
@@ -543,6 +554,16 @@ export default function App() {
     today.setHours(0, 0, 0, 0);
 
     return lastCompleted.getTime() !== today.getTime();
+  };
+
+  // Helper to get just completed challenges (player finished all days, but challenge hasn't globally ended)
+  const getJustCompletedChallenges = (allChallenges) => {
+    return allChallenges.filter(
+      (uc) =>
+        uc.status === "active" &&
+        uc.lastCompletedDay === uc.challengeDetails.numberOfDays &&
+        !isChallengeEnded(uc.challengeDetails.startDate, uc.challengeDetails.numberOfDays)
+    );
   };
 
   // Helper to get visible ended challenges (max 2 per type)
@@ -664,9 +685,18 @@ export default function App() {
           <div>
             <h2>My Active Challenges</h2>
             {(() => {
-              const activeChallenges = userChallenges.filter((uc) => uc.status === "active");
+              const activeChallenges = userChallenges.filter(
+                (uc) =>
+                  uc.status === "active" &&
+                  !isChallengeEnded(uc.challengeDetails.startDate, uc.challengeDetails.numberOfDays) &&
+                  uc.lastCompletedDay !== uc.challengeDetails.numberOfDays
+              );
+              const justCompletedChallenges = getJustCompletedChallenges(userChallenges);
               const endedChallenges = getVisibleEndedChallenges(userChallenges);
-              const hasAnyChallenges = activeChallenges.length > 0 || endedChallenges.length > 0;
+              const hasAnyChallenges =
+                activeChallenges.length > 0 ||
+                justCompletedChallenges.length > 0 ||
+                endedChallenges.length > 0;
 
               if (!hasAnyChallenges) {
                 return (
@@ -684,24 +714,8 @@ export default function App() {
                     gap: "15px",
                   }}
                 >
-                  {/* Active challenges */}
+                  {/* Active challenges (still working on) */}
                   {activeChallenges.map((userChallenge) => {
-                    const challengeHasEnded = isChallengeEnded(
-                      userChallenge.challengeDetails.startDate,
-                      userChallenge.challengeDetails.numberOfDays
-                    );
-
-                    // If challenge has ended, show ended card
-                    if (challengeHasEnded) {
-                      return (
-                        <ChallengeEndedCard
-                          key={userChallenge.userChallengeId}
-                          userChallenge={userChallenge}
-                        />
-                      );
-                    }
-
-                    // Otherwise show normal card
                     const canStart = canStartToday(userChallenge);
                     const restCount = userChallenge.missedDaysCount || 0;
                     const redosRemaining = 3 - attemptNumber;
@@ -806,11 +820,21 @@ export default function App() {
                     );
                   })}
 
+                  {/* Just completed challenges (awaiting global end) */}
+                  {justCompletedChallenges.map((userChallenge) => (
+                    <ChallengeEndedCard
+                      key={userChallenge.userChallengeId}
+                      userChallenge={userChallenge}
+                      isAwaitingGlobalEnd={true}
+                    />
+                  ))}
+
                   {/* Ended challenges (max 2 per type) */}
                   {endedChallenges.map((userChallenge) => (
                     <ChallengeEndedCard
                       key={userChallenge.userChallengeId}
                       userChallenge={userChallenge}
+                      isAwaitingGlobalEnd={false}
                     />
                   ))}
                 </div>
