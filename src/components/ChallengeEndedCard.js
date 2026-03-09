@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { calculateChallengeRankings } from "../rankingCalculator";
 
-export default function ChallengeEndedCard({ userChallenge }) {
+export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd = false }) {
   const [isCalculatingRank, setIsCalculatingRank] = useState(false);
   const [rankError, setRankError] = useState(null);
   const [localRank, setLocalRank] = useState(userChallenge.finalRank);
@@ -13,6 +13,7 @@ export default function ChallengeEndedCard({ userChallenge }) {
   const totalDaysAttempted = userChallenge.totalDaysAttempted || 0;
   const successfulDaysCount = userChallenge.successfulDaysCount || 0;
   const numberOfDays = challengeDetails.numberOfDays;
+  const lastCompletedDay = userChallenge.lastCompletedDay || 0;
 
   // Format seconds as "Xm Ys" or "Xs"
   const formatSeconds = (sec) => {
@@ -23,9 +24,14 @@ export default function ChallengeEndedCard({ userChallenge }) {
     return `${mins}m ${rem}s`;
   };
 
-  // Calculate rankings if not yet calculated
+  // Calculate rankings if not yet calculated (only if challenge has globally ended)
   useEffect(() => {
     const calculateRankIfNeeded = async () => {
+      // Don't calculate if awaiting global end
+      if (isAwaitingGlobalEnd) {
+        return;
+      }
+
       // Check if ranking already calculated
       if (localRank != null && localTotalParticipants != null) {
         return;
@@ -61,7 +67,7 @@ export default function ChallengeEndedCard({ userChallenge }) {
     };
 
     calculateRankIfNeeded();
-  }, [userChallenge, challengeDetails, localRank, localTotalParticipants, totalDaysAttempted]);
+  }, [userChallenge, challengeDetails, localRank, localTotalParticipants, totalDaysAttempted, isAwaitingGlobalEnd]);
 
   // If no attempts recorded
   if (totalDaysAttempted === 0) {
@@ -76,7 +82,7 @@ export default function ChallengeEndedCard({ userChallenge }) {
         }}
       >
         <h3 style={{ margin: "0 0 10px 0", color: "#92400e" }}>
-          Challenge Ended
+          {isAwaitingGlobalEnd ? "🏁 Challenge Complete" : "Challenge Ended"}
         </h3>
         <p style={{ margin: "5px 0", fontWeight: "bold" }}>
           {challengeDetails.name}
@@ -103,8 +109,13 @@ export default function ChallengeEndedCard({ userChallenge }) {
       }}
     >
       <h3 style={{ margin: "0 0 10px 0", color: "#92400e" }}>
-        Challenge Ended
+        {isAwaitingGlobalEnd ? "🏁 Challenge Complete" : "Challenge Ended"}
       </h3>
+      {isAwaitingGlobalEnd && (
+        <p style={{ margin: "0 0 10px 0", color: "#92400e", fontSize: "14px", fontStyle: "italic" }}>
+          Final results at midnight MST
+        </p>
+      )}
       <p style={{ margin: "5px 0", fontWeight: "bold", fontSize: "16px" }}>
         {challengeDetails.name}
       </p>
@@ -121,10 +132,15 @@ export default function ChallengeEndedCard({ userChallenge }) {
           <li style={{ marginBottom: "5px" }}>
             <strong>Average:</strong>{" "}
             {isPlank ? formatSeconds(averagePerformance) : `${averagePerformance} reps`}
-            {" "}across {successfulDaysCount} successful day{successfulDaysCount !== 1 ? "s" : ""}
-            {" "}({totalDaysAttempted} total attempt{totalDaysAttempted !== 1 ? "s" : ""})
           </li>
-          {isCalculatingRank ? (
+          <li style={{ marginBottom: "5px" }}>
+            <strong>Days Completed:</strong> {lastCompletedDay} of {numberOfDays}
+          </li>
+          {isAwaitingGlobalEnd ? (
+            <li style={{ marginBottom: "5px", fontStyle: "italic" }}>
+              <strong>Rank:</strong> TBD - Updates at midnight MST
+            </li>
+          ) : isCalculatingRank ? (
             <li style={{ marginBottom: "5px", fontStyle: "italic" }}>
               Calculating rankings...
             </li>
@@ -137,9 +153,6 @@ export default function ChallengeEndedCard({ userChallenge }) {
               <strong>Ranked:</strong> #{localRank} of {localTotalParticipants} participants
             </li>
           ) : null}
-          <li>
-            <strong>Completed:</strong> {totalDaysAttempted} of {numberOfDays} days
-          </li>
         </ul>
       </div>
     </div>
