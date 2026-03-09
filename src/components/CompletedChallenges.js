@@ -10,7 +10,6 @@ import {
   doc,
   getDoc,
 } from "firebase/firestore";
-import { isChallengeEnded } from "../utils";
 
 export default function CompletedChallenges({ user }) {
   const [completedChallenges, setCompletedChallenges] = useState([]);
@@ -45,13 +44,11 @@ export default function CompletedChallenges({ user }) {
 
       for (const docSnap of snapshot.docs) {
         const data = docSnap.data();
-        // Only include challenges that have actually ended
-        if (isChallengeEnded(data.startDate, data.numberOfDays)) {
-          challenges.push({
-            id: docSnap.id,
-            ...data,
-          });
-        }
+        // Show all inactive challenges (includes force-ended ones)
+        challenges.push({
+          id: docSnap.id,
+          ...data,
+        });
       }
 
       // Sort by end date, most recent first
