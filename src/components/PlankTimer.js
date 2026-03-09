@@ -11,6 +11,8 @@ import {
 } from "firebase/firestore";
 import { getPhoenixDate } from "../utils";
 import { updatePlankStatsOnSuccess } from "../statsHelpers";
+import { updateBadgesOnCompletion } from "../badgeHelpers";
+import BadgeCelebration from "./BadgeCelebration";
 
 // Simple helper to request/release screen wake lock
 // Uses the Screen Wake Lock API if supported by the browser.
@@ -97,33 +99,35 @@ export default function PlankTimer({
   const [recoveryTip, setRecoveryTip] = useState("");
 
   // Anti-cheating states
-  const [stillGoingCountdown, setStillGoingCountdown] = useState(20); // 20 second countdown
-  const [frozenTime, setFrozenTime] = useState(0); // Time when frozen (for Keep/Do-over screen)
+  const [stillGoingCountdown, setStillGoingCountdown] = useState(20);
+  const [frozenTime, setFrozenTime] = useState(0);
   const [showWakeLockWarning, setShowWakeLockWarning] = useState(false);
-  const [stillGoingStartTime, setStillGoingStartTime] = useState(null); // Track when prompt started
+  const [stillGoingStartTime, setStillGoingStartTime] = useState(null);
+
+  // Badge celebration
+  const [newBadges, setNewBadges] = useState([]);
+  const [showBadgeCelebration, setShowBadgeCelebration] = useState(false);
 
   const intervalRef = useRef(null);
   const recoveryIntervalRef = useRef(null);
   const startTimeRef = useRef(null);
   const stillGoingIntervalRef = useRef(null);
-
-  // Store wake lock sentinel so we can release it later
   const wakeLockRef = useRef(null);
 
   const RECOVERY_LIMIT = 60;
 
-  // Check wake lock support on mount and show warning if not supported
+  // Check wake lock support on mount
   useEffect(() => {
     if (!isWakeLockSupported()) {
       setShowWakeLockWarning(true);
       const timer = setTimeout(() => {
         setShowWakeLockWarning(false);
-      }, 5000); // Hide after 5 seconds
+      }, 5000);
       return () => clearTimeout(timer);
     }
   }, []);
 
-  // Countdown phase: Ready (1s), Set (1s), Go (1s)
+  // Countdown phase
   useEffect(() => {
     if (stage === "countdown" && countdown > 0) {
       const timer = setTimeout(() => {
@@ -132,7 +136,6 @@ export default function PlankTimer({
       return () => clearTimeout(timer);
     } else if (stage === "countdown" && countdown === 0) {
       setStage("active");
-      // If resuming from pause, adjust start time to continue from pausedElapsed
       if (pausedElapsed > 0) {
         startTimeRef.current = Date.now() - pausedElapsed * 1000;
       } else {
@@ -141,7 +144,7 @@ export default function PlankTimer({
     }
   }, [stage, countdown, pausedElapsed]);
 
-  // Active timer - counts up
+  // Active timer
   useEffect(() => {
     if (stage === "active") {
       intervalRef.current = setInterval(() => {
@@ -149,21 +152,19 @@ export default function PlankTimer({
         const total = Math.floor((now - startTimeRef.current) / 1000);
         setElapsed(total);
 
-        // Check for "Still Going?" prompts (at 5min, then every 2min AFTER 5min)
         const shouldPrompt = 
-          (total === 300) || // 5 minutes
-          (total > 300 && (total - 300) % 120 === 0); // Every 2 minutes AFTER the 5min mark (7, 9, 11...)
+          (total === 300) || 
+          (total > 300 && (total - 300) % 120 === 0);
         
         if (shouldPrompt) {
           clearInterval(intervalRef.current);
           setFrozenTime(total);
           setStillGoingCountdown(20);
-          setStillGoingStartTime(Date.now()); // Record when prompt started
+          setStillGoingStartTime(Date.now());
           setStage("stillGoingPrompt");
           return;
         }
 
-        // If they paused before and hit goal, AUTO-STOP
         if (hasPaused && total >= targetSeconds) {
           clearInterval(intervalRef.current);
           setStage("autoStopping");
@@ -180,7 +181,7 @@ export default function PlankTimer({
     };
   }, [stage, hasPaused, targetSeconds]);
 
-  // Auto-stop animation (flash green 0.5s, then show Keep/Do-over)
+  // Auto-stop animation
   useEffect(() => {
     if (stage === "autoStopping") {
       const timer = setTimeout(() => {
@@ -191,15 +192,13 @@ export default function PlankTimer({
     }
   }, [stage, targetSeconds]);
 
-  // "Still Going?" countdown timer
+  // Still Going countdown
   useEffect(() => {
     if (stage === "stillGoingPrompt") {
       stillGoingIntervalRef.current = setInterval(() => {
         setStillGoingCountdown((prev) => {
           if (prev <= 1) {
-            // Time's up - they missed it - DON'T add the 20 seconds penalty
             clearInterval(stillGoingIntervalRef.current);
-            // Just use the frozen time without adding response time
             setStage("keepRedoScreen");
             return 0;
           }
@@ -219,18 +218,17 @@ export default function PlankTimer({
     };
   }, [stage]);
 
-  // Keep/Do-over screen timeout (20 seconds)
+  // Keep/Do-over timeout
   useEffect(() => {
     if (stage === "keepRedoScreen") {
       const timer = setTimeout(() => {
-        // Timeout - same behavior as clicking do-over
         handleRedoAttempt();
       }, 20000);
       return () => clearTimeout(timer);
     }
   }, [stage]);
 
-  // Recovery timer (when paused)
+  // Recovery timer
   useEffect(() => {
     if (stage === "paused" && currentPauseStart) {
       recoveryIntervalRef.current = setInterval(() => {
@@ -261,12 +259,11 @@ export default function PlankTimer({
     };
   }, [stage, currentPauseStart, totalRecoveryUsed]);
 
-  // Handle wake lock when stage changes
+  // Wake lock management
   useEffect(() => {
     let isMounted = true;
 
     const ensureWakeLock = async () => {
-      // Keep screen on during all these stages
       if (
         stage === "countdown" ||
         stage === "active" || 
@@ -282,7 +279,6 @@ export default function PlankTimer({
           }
         }
       } else {
-        // For complete, failed, or when leaving:
         if (wakeLockRef.current) {
           try {
             await wakeLockRef.current.release();
@@ -297,7 +293,6 @@ export default function PlankTimer({
     ensureWakeLock();
 
     const handleVisibility = async () => {
-      // Extra guard so we don't call the API where it doesn't exist
       const hasWakeLockApi = isWakeLockSupported();
 
       if (
@@ -332,7 +327,6 @@ export default function PlankTimer({
       setPausedElapsed(elapsed);
       setCurrentPauseStart(Date.now());
       setCurrentRecoveryTime(0);
-      // Select random recovery tip
       const randomTip = RECOVERY_TIPS[Math.floor(Math.random() * RECOVERY_TIPS.length)];
       setRecoveryTip(randomTip);
       setStage("paused");
@@ -352,8 +346,6 @@ export default function PlankTimer({
         setTotalRecoveryUsed(newTotalRecovery);
         setCurrentPauseStart(null);
         setCurrentRecoveryTime(0);
-
-        // Do another Ready, Set, Go countdown
         setCountdown(3);
         setStage("countdown");
       }
@@ -361,59 +353,46 @@ export default function PlankTimer({
   };
 
   const handleDone = () => {
-    // Manual stop (never paused, going past goal)
     setFrozenTime(elapsed);
     setStage("keepRedoScreen");
   };
 
   const handleStillGoingPressed = () => {
-    // User confirmed they're still going - calculate actual elapsed time
     const responseTime = Math.floor((Date.now() - stillGoingStartTime) / 1000);
     const actualElapsed = frozenTime + responseTime;
-    
-    // Resume timer from actual elapsed time (frozen time + response time)
     setStage("active");
     startTimeRef.current = Date.now() - actualElapsed * 1000;
   };
 
   const handleKeepTime = async () => {
-    // User chose to keep their time - log it as success
     await handleLogAttempt(frozenTime, frozenTime >= targetSeconds);
   };
 
   const handleRedoAttempt = () => {
     if (attemptNumber >= 3) {
-      // Already on 3rd attempt, no more do-overs
-      // Log as failed and advance to next day
       handleFailedAttempt();
       return;
     }
-
-    // Do-over requested - increment attempt number and return to Active tab
-    onRedoUsed(); // Increment attempt number in App.js
-    onComplete(true); // Pass true to indicate this is a do-over (don't reset attemptNumber)
+    onRedoUsed();
+    onComplete(true);
   };
 
   const getCelebrationMessage = (actualValue) => {
     const overAmount = actualValue - targetSeconds;
     if (overAmount >= 15) {
-      // High celebration
       const msg = HIGH_CELEBRATIONS[Math.floor(Math.random() * HIGH_CELEBRATIONS.length)];
       return `+${overAmount} seconds over goal! ${msg}`;
     } else {
-      // Standard celebration
       return STANDARD_CELEBRATIONS[Math.floor(Math.random() * STANDARD_CELEBRATIONS.length)];
     }
   };
 
   const handleLogAttempt = async (actualValue, success) => {
     try {
-      // Get current userChallenge data to update stats
       const userChallengeRef = doc(db, "userChallenges", userChallengeId);
       const userChallengeSnap = await getDoc(userChallengeRef);
       const currentData = userChallengeSnap.data() || {};
 
-      // Calculate new stats
       const currentTotalDays = currentData.totalDaysAttempted || 0;
       const currentSuccessfulDays = currentData.successfulDaysCount || 0;
       const currentBest = currentData.bestPerformance || 0;
@@ -425,7 +404,6 @@ export default function PlankTimer({
       const newTotalSeconds = currentTotalSeconds + (success ? actualValue : 0);
       const newAverage = newSuccessfulDays > 0 ? Math.round(newTotalSeconds / newSuccessfulDays) : 0;
 
-      // Log attempt
       await addDoc(collection(db, "attempts"), {
         userId: userId,
         userChallengeId: userChallengeId,
@@ -438,7 +416,6 @@ export default function PlankTimer({
         timestamp: Timestamp.fromDate(getPhoenixDate()),
       });
 
-      // If success, update stats with overrideDisplayName and teamId
       if (success && user) {
         await updatePlankStatsOnSuccess({
           user,
@@ -447,18 +424,29 @@ export default function PlankTimer({
           overrideDisplayName: displayName || undefined,
           teamId: teamId || null,
         });
+
+        // Update badges and check for new badges
+        const badgeResult = await updateBadgesOnCompletion({
+          userId: userId,
+          challengeId: challengeId,
+          currentDay: day,
+          actualValue: actualValue,
+          targetValue: targetSeconds,
+          movementType: "plank",
+        });
+
+        if (badgeResult.newBadges && badgeResult.newBadges.length > 0) {
+          setNewBadges(badgeResult.newBadges);
+          setShowBadgeCelebration(true);
+        }
       }
 
-      // Update userChallenge
       const nextDay = day + 1;
-      // FIXED: Keep status as "active" even when player finishes all days
-      // The sync function will set it to "completed" at midnight when challenge globally ends
 
       await updateDoc(userChallengeRef, {
         currentDay: nextDay,
         lastCompletedDay: day,
         lastCompletedDate: Timestamp.fromDate(getPhoenixDate()),
-        // status stays "active" - will be set to "completed" by sync at midnight
         totalDaysAttempted: newTotalDays,
         successfulDaysCount: newSuccessfulDays,
         bestPerformance: newBest,
@@ -466,10 +454,9 @@ export default function PlankTimer({
         averagePerformance: newAverage,
       });
 
-      // Show completion screen, then auto-return after 5 seconds
       setStage("complete");
       setTimeout(() => {
-        onComplete(false); // Pass false - day actually completed, reset attemptNumber
+        onComplete(false);
       }, 5000);
     } catch (error) {
       console.error("Error logging attempt:", error);
@@ -478,9 +465,7 @@ export default function PlankTimer({
   };
 
   const handleFailedAttempt = async () => {
-    // Recovery expired or 3rd attempt timeout - log failed attempt AND advance day
     try {
-      // Get current userChallenge data
       const userChallengeRef = doc(db, "userChallenges", userChallengeId);
       const userChallengeSnap = await getDoc(userChallengeRef);
       const currentData = userChallengeSnap.data() || {};
@@ -500,20 +485,17 @@ export default function PlankTimer({
         timestamp: Timestamp.fromDate(getPhoenixDate()),
       });
 
-      // Advance to next day (same as success, but without updating stats)
       const nextDay = day + 1;
-      // FIXED: Keep status as "active" even when player finishes all days
 
       await updateDoc(userChallengeRef, {
         currentDay: nextDay,
         lastCompletedDay: day,
         lastCompletedDate: Timestamp.fromDate(getPhoenixDate()),
-        // status stays "active" - will be set to "completed" by sync at midnight
         totalDaysAttempted: newTotalDays,
       });
 
       setTimeout(() => {
-        onComplete(false); // Pass false - day failed but completed, reset attemptNumber
+        onComplete(false);
       }, 3000);
     } catch (error) {
       console.error("Error logging failed attempt:", error);
@@ -521,7 +503,6 @@ export default function PlankTimer({
     }
   };
 
-  // Call handleFailedAttempt when stage becomes "failed"
   useEffect(() => {
     if (stage === "failed") {
       handleFailedAttempt();
@@ -529,11 +510,11 @@ export default function PlankTimer({
   }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getTimerColor = () => {
-    if (stage === "autoStopping") return "#22c55e"; // Green flash
-    if (elapsed < targetSeconds * 0.5) return "#3b82f6"; // Blue - under halfway
-    if (elapsed < targetSeconds) return "#3b82f6"; // Blue - still under goal
-    if (elapsed < targetSeconds * 2) return "#22c55e"; // Green - at goal up to double
-    return "#eab308"; // Gold - doubled goal!
+    if (stage === "autoStopping") return "#22c55e";
+    if (elapsed < targetSeconds * 0.5) return "#3b82f6";
+    if (elapsed < targetSeconds) return "#3b82f6";
+    if (elapsed < targetSeconds * 2) return "#22c55e";
+    return "#eab308";
   };
 
   const formatTime = (seconds) => {
@@ -549,458 +530,309 @@ export default function PlankTimer({
     return "";
   };
 
-  // Recovery remaining calculation
   const recoveryRemaining =
     RECOVERY_LIMIT - totalRecoveryUsed - currentRecoveryTime;
 
-  // Determine if we should show pause button
   const shouldShowPauseButton = hasPaused || elapsed < targetSeconds;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: "var(--color-background)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
-    >
-      {/* Wake Lock Warning Banner */}
-      {showWakeLockWarning && (
-        <div
-          style={{
-            position: "absolute",
-            top: "60px",
-            left: "20px",
-            right: "20px",
-            backgroundColor: "#fbbf24",
-            color: "#78350f",
-            padding: "30px 24px",
-            borderRadius: "12px",
-            fontSize: "20px",
-            display: "flex",
-            alignItems: "center",
-            gap: "12px",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-            animation: "fadeIn 0.3s ease-in",
-            zIndex: 1001,
-            fontWeight: "600",
-          }}
-        >
-          <span style={{ fontSize: "28px" }}>⚠️</span>
-          <span>
-            Your browser may not support keeping the screen on. If your screen
-            goes to sleep during the plank, the timer will pause automatically.
-          </span>
-        </div>
+    <>
+      {/* Badge Celebration Modal */}
+      {showBadgeCelebration && (
+        <BadgeCelebration
+          badges={newBadges}
+          onClose={() => setShowBadgeCelebration(false)}
+        />
       )}
 
-      {/* Cancel button (top-left) - only during countdown and active */}
-      {(stage === "countdown" || stage === "active" || stage === "paused") && (
-        <button
-          onClick={onCancel}
-          style={{
-            position: "absolute",
-            top: "20px",
-            left: "20px",
-            background: "transparent",
-            border: "none",
-            color: "var(--color-text-secondary)",
-            fontSize: "14px",
-            cursor: "pointer",
-            padding: "8px 12px",
-          }}
-        >
-          Cancel
-        </button>
-      )}
-
-      {/* COUNTDOWN PHASE: Ready, Set, Go */}
-      {stage === "countdown" && (
-        <div style={{ textAlign: "center" }}>
-          {attemptNumber > 1 && (
-            <div
-              style={{
-                fontSize: attemptNumber === 3 ? "40px" : "20px",
-                color: "var(--color-warning)",
-                marginBottom: "40px",
-                padding: attemptNumber === 3 ? "30px" : "0",
-                backgroundColor: attemptNumber === 3 ? "rgba(251, 191, 36, 0.2)" : "transparent",
-                borderRadius: attemptNumber === 3 ? "12px" : "0",
-                fontWeight: attemptNumber === 3 ? "bold" : "normal",
-              }}
-            >
-              {attemptNumber === 3 ? (
-                <div>
-                  <div style={{ fontSize: "50px", marginBottom: "10px" }}>⚠️</div>
-                  <div>Last chance today - you've got this!</div>
-                </div>
-              ) : (
-                `Attempt ${attemptNumber} of 3`
-              )}
-            </div>
-          )}
-          <h1
-            style={{
-              fontSize: "80px",
-              margin: 0,
-              color: "var(--color-text)",
-              fontWeight: "bold",
-            }}
-          >
-            {getCountdownText()}
-          </h1>
-        </div>
-      )}
-
-      {/* ACTIVE OR PAUSED PHASE */}
-      {(stage === "active" ||
-        stage === "paused" ||
-        stage === "autoStopping") && (
-        <div
-          style={{
-            textAlign: "center",
-            width: "100%",
-            maxWidth: "500px",
-            padding: "0 20px",
-          }}
-        >
-          {/* Prominent Recovery Tip (when paused) */}
-          {stage === "paused" && (
-            <div
-              style={{
-                position: "absolute",
-                top: "80px",
-                left: "20px",
-                right: "20px",
-                fontSize: "90px",
-                fontWeight: "bold",
-                color: "#f97316",
-                textAlign: "center",
-                lineHeight: "1.1",
-                textShadow: "0 2px 4px rgba(0,0,0,0.1)",
-              }}
-            >
-              {recoveryTip}
-            </div>
-          )}
-
-          {/* Goal Display */}
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "var(--color-background)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+        }}
+      >
+        {/* Wake Lock Warning Banner */}
+        {showWakeLockWarning && (
           <div
             style={{
+              position: "absolute",
+              top: "60px",
+              left: "20px",
+              right: "20px",
+              backgroundColor: "#fbbf24",
+              color: "#78350f",
+              padding: "30px 24px",
+              borderRadius: "12px",
               fontSize: "20px",
-              color: "var(--color-text-secondary)",
-              marginBottom: "40px",
-            }}
-          >
-            Day {day} challenge Goal: {targetSeconds} seconds
-          </div>
-
-          {/* Big Timer */}
-          <div
-            style={{
-              fontSize: "120px",
-              fontWeight: "bold",
-              color: getTimerColor(),
-              marginBottom: "40px",
-              transition: "color 0.3s ease",
-            }}
-          >
-            {formatTime(stage === "paused" ? pausedElapsed : elapsed)}
-          </div>
-
-          {/* Paused Status with Recovery Time */}
-          {stage === "paused" && (
-            <div
-              style={{
-                fontSize: "24px",
-                color: "var(--color-warning)",
-                marginBottom: "30px",
-                textAlign: "center",
-              }}
-            >
-              <div style={{ fontWeight: "bold" }}>⏸️ PAUSED</div>
-              <div
-                style={{
-                  fontSize: "18px",
-                  marginTop: "12px",
-                  color: "var(--color-text-secondary)",
-                }}
-              >
-                Recovery: {formatTime(Math.max(0, recoveryRemaining))}
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div
-            style={{
               display: "flex",
-              flexDirection: "column",
-              gap: "16px",
-              alignItems: "stretch",
-              width: "100%",
-            }}
-          >
-            {/* Active - show Done button if past goal and never paused */}
-            {stage === "active" && (
-              <>
-                {!hasPaused && elapsed >= targetSeconds && (
-                  <button
-                    className="btn btn--primary"
-                    onClick={handleDone}
-                    style={{
-                      fontSize: "24px",
-                      padding: "20px 40px",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    ✓ Done
-                  </button>
-                )}
-
-                {/* Pause button - only show if haven't paused yet OR still under goal */}
-                {shouldShowPauseButton && (
-                  <button
-                    className="btn btn--secondary"
-                    onClick={handlePause}
-                    style={{
-                      fontSize: "20px",
-                      padding: "16px 32px",
-                    }}
-                  >
-                    Pause
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* Paused - show Resume */}
-            {stage === "paused" && (
-              <button
-                className="btn btn--primary"
-                onClick={handleResume}
-                style={{
-                  fontSize: "24px",
-                  padding: "20px 40px",
-                  fontWeight: "bold",
-                }}
-              >
-                Resume
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* STILL GOING PROMPT - Full Screen RED Button */}
-      {stage === "stillGoingPrompt" && (
-        <div
-          onClick={handleStillGoingPressed}
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "#dc2626",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            zIndex: 1002,
-          }}
-        >
-          {/* Main Message */}
-          <div
-            style={{
-              fontSize: "48px",
-              fontWeight: "bold",
-              color: "white",
-              marginBottom: "20px",
-              textAlign: "center",
-              padding: "0 20px",
-            }}
-          >
-            Still crushing it? Tap here!
-          </div>
-          
-          <div
-            style={{
-              fontSize: "20px",
-              color: "white",
-              marginBottom: "40px",
-              opacity: 0.9,
-            }}
-          >
-            (Tap anywhere)
-          </div>
-
-          {/* Countdown */}
-          <div
-            style={{
-              fontSize: "80px",
-              fontWeight: "bold",
-              color: "white",
-              textAlign: "center",
-            }}
-          >
-            {stillGoingCountdown}
-          </div>
-          
-          <div
-            style={{
-              fontSize: "24px",
-              color: "white",
-              marginTop: "10px",
-              opacity: 0.9,
-            }}
-          >
-            seconds
-          </div>
-        </div>
-      )}
-
-      {/* KEEP TIME OR DO-OVER SCREEN */}
-      {stage === "keepRedoScreen" && (
-        <div
-          style={{
-            textAlign: "center",
-            width: "100%",
-            maxWidth: "500px",
-            padding: "0 20px",
-          }}
-        >
-          <h2 style={{ color: "var(--color-text)", marginBottom: "20px" }}>
-            Your Time
-          </h2>
-
-          {/* Display the time */}
-          <div
-            style={{
-              fontSize: "80px",
-              fontWeight: "bold",
-              color:
-                frozenTime >= targetSeconds
-                  ? "var(--color-success)"
-                  : "var(--color-warning)",
-              marginBottom: "40px",
-            }}
-          >
-            {formatTime(frozenTime)}
-          </div>
-
-          {frozenTime >= targetSeconds ? (
-            <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
-              🎉 You met your goal of {targetSeconds} seconds!
-            </p>
-          ) : (
-            <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
-              Goal: {targetSeconds} seconds
-            </p>
-          )}
-
-          {/* Buttons */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "16px",
-              alignItems: "stretch",
-              width: "100%",
-            }}
-          >
-            <button
-              className="btn btn--primary"
-              onClick={handleKeepTime}
-              style={{
-                fontSize: "24px",
-                padding: "20px 40px",
-                fontWeight: "bold",
-              }}
-            >
-              ✓ Keep Time
-            </button>
-
-            <button
-              className="btn btn--secondary"
-              onClick={handleRedoAttempt}
-              disabled={attemptNumber >= 3}
-              style={{
-                fontSize: "20px",
-                padding: "16px 32px",
-                opacity: attemptNumber >= 3 ? 0.5 : 1,
-                cursor: attemptNumber >= 3 ? "not-allowed" : "pointer",
-              }}
-            >
-              {attemptNumber >= 3 ? "No Do-Overs Left" : "🔄 Do-Over"}
-            </button>
-          </div>
-
-          {attemptNumber < 3 && (
-            <p
-              style={{
-                fontSize: "14px",
-                color: "var(--color-text-secondary)",
-                marginTop: "20px",
-              }}
-            >
-              {3 - attemptNumber} {3 - attemptNumber === 1 ? "do-over" : "do-overs"} remaining
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* COMPLETION SCREEN */}
-      {stage === "complete" && (
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: "80px", marginBottom: "20px" }}>🎉</div>
-          <h2 style={{ color: "var(--color-success)", marginBottom: "16px" }}>
-            Day {day} challenge Complete!
-          </h2>
-          <p
-            style={{
-              fontSize: "24px",
-              color: "var(--color-text)",
+              alignItems: "center",
+              gap: "12px",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+              animation: "fadeIn 0.3s ease-in",
+              zIndex: 1001,
               fontWeight: "600",
             }}
           >
-            {formatTime(frozenTime)}
-          </p>
-          {!hasPaused && frozenTime > targetSeconds && (
-            <p
+            <span style={{ fontSize: "28px" }}>⚠️</span>
+            <span>
+              Your browser may not support keeping the screen on. If your screen
+              goes to sleep during the plank, the timer will pause automatically.
+            </span>
+          </div>
+        )}
+
+        {/* Cancel button */}
+        {(stage === "countdown" || stage === "active" || stage === "paused") && (
+          <button
+            onClick={onCancel}
+            style={{
+              position: "absolute",
+              top: "20px",
+              left: "20px",
+              background: "transparent",
+              border: "none",
+              color: "var(--color-text-secondary)",
+              fontSize: "14px",
+              cursor: "pointer",
+              padding: "8px 12px",
+            }}
+          >
+            Cancel
+          </button>
+        )}
+
+        {/* COUNTDOWN PHASE */}
+        {stage === "countdown" && (
+          <div style={{ textAlign: "center" }}>
+            {attemptNumber > 1 && (
+              <div
+                style={{
+                  fontSize: attemptNumber === 3 ? "40px" : "20px",
+                  color: "var(--color-warning)",
+                  marginBottom: "40px",
+                  padding: attemptNumber === 3 ? "30px" : "0",
+                  backgroundColor: attemptNumber === 3 ? "rgba(251, 191, 36, 0.2)" : "transparent",
+                  borderRadius: attemptNumber === 3 ? "12px" : "0",
+                  fontWeight: attemptNumber === 3 ? "bold" : "normal",
+                }}
+              >
+                {attemptNumber === 3 ? (
+                  <div>
+                    <div style={{ fontSize: "50px", marginBottom: "10px" }}>⚠️</div>
+                    <div>Last chance today - you've got this!</div>
+                  </div>
+                ) : (
+                  `Attempt ${attemptNumber} of 3`
+                )}
+              </div>
+            )}
+            <h1
               style={{
-                fontSize: "18px",
-                color: "var(--color-primary)",
-                marginTop: "12px",
+                fontSize: "80px",
+                margin: 0,
+                color: "var(--color-text)",
+                fontWeight: "bold",
               }}
             >
-              {getCelebrationMessage(frozenTime)}
-            </p>
-          )}
-        </div>
-      )}
+              {getCountdownText()}
+            </h1>
+          </div>
+        )}
 
-      {/* FAILED SCREEN (Recovery Expired or 3rd attempt timeout) */}
-      {stage === "failed" && (
-        <div style={{ textAlign: "center", padding: "20px" }}>
-          <div style={{ fontSize: "60px", marginBottom: "20px" }}>📝</div>
-          <h2 style={{ color: "var(--color-text)", marginBottom: "12px" }}>
-            Day {day} challenge logged - tomorrow's a new opportunity!
-          </h2>
-          <p style={{ color: "var(--color-text-secondary)", fontSize: "18px" }}>
-            Ready to crush Day {day + 1} challenge tomorrow!
-          </p>
-        </div>
-      )}
-    </div>
+        {/* ACTIVE OR PAUSED */}
+        {(stage === "active" || stage === "paused" || stage === "autoStopping") && (
+          <div style={{ textAlign: "center", width: "100%", maxWidth: "500px", padding: "0 20px" }}>
+            {stage === "paused" && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "80px",
+                  left: "20px",
+                  right: "20px",
+                  fontSize: "90px",
+                  fontWeight: "bold",
+                  color: "#f97316",
+                  textAlign: "center",
+                  lineHeight: "1.1",
+                  textShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                }}
+              >
+                {recoveryTip}
+              </div>
+            )}
+
+            <div style={{ fontSize: "20px", color: "var(--color-text-secondary)", marginBottom: "40px" }}>
+              Day {day} challenge Goal: {targetSeconds} seconds
+            </div>
+
+            <div
+              style={{
+                fontSize: "120px",
+                fontWeight: "bold",
+                color: getTimerColor(),
+                marginBottom: "40px",
+                transition: "color 0.3s ease",
+              }}
+            >
+              {formatTime(stage === "paused" ? pausedElapsed : elapsed)}
+            </div>
+
+            {stage === "paused" && (
+              <div style={{ fontSize: "24px", color: "var(--color-warning)", marginBottom: "30px", textAlign: "center" }}>
+                <div style={{ fontWeight: "bold" }}>⏸️ PAUSED</div>
+                <div style={{ fontSize: "18px", marginTop: "12px", color: "var(--color-text-secondary)" }}>
+                  Recovery: {formatTime(Math.max(0, recoveryRemaining))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", alignItems: "stretch", width: "100%" }}>
+              {stage === "active" && (
+                <>
+                  {!hasPaused && elapsed >= targetSeconds && (
+                    <button className="btn btn--primary" onClick={handleDone} style={{ fontSize: "24px", padding: "20px 40px", fontWeight: "bold" }}>
+                      ✓ Done
+                    </button>
+                  )}
+                  {shouldShowPauseButton && (
+                    <button className="btn btn--secondary" onClick={handlePause} style={{ fontSize: "20px", padding: "16px 32px" }}>
+                      Pause
+                    </button>
+                  )}
+                </>
+              )}
+              {stage === "paused" && (
+                <button className="btn btn--primary" onClick={handleResume} style={{ fontSize: "24px", padding: "20px 40px", fontWeight: "bold" }}>
+                  Resume
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* STILL GOING PROMPT */}
+        {stage === "stillGoingPrompt" && (
+          <div
+            onClick={handleStillGoingPressed}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "#dc2626",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              zIndex: 1002,
+            }}
+          >
+            <div style={{ fontSize: "48px", fontWeight: "bold", color: "white", marginBottom: "20px", textAlign: "center", padding: "0 20px" }}>
+              Still crushing it? Tap here!
+            </div>
+            <div style={{ fontSize: "20px", color: "white", marginBottom: "40px", opacity: 0.9 }}>
+              (Tap anywhere)
+            </div>
+            <div style={{ fontSize: "80px", fontWeight: "bold", color: "white", textAlign: "center" }}>
+              {stillGoingCountdown}
+            </div>
+            <div style={{ fontSize: "24px", color: "white", marginTop: "10px", opacity: 0.9 }}>
+              seconds
+            </div>
+          </div>
+        )}
+
+        {/* KEEP TIME OR DO-OVER SCREEN */}
+        {stage === "keepRedoScreen" && (
+          <div style={{ textAlign: "center", width: "100%", maxWidth: "500px", padding: "0 20px" }}>
+            <h2 style={{ color: "var(--color-text)", marginBottom: "20px" }}>Your Time</h2>
+            <div
+              style={{
+                fontSize: "80px",
+                fontWeight: "bold",
+                color: frozenTime >= targetSeconds ? "var(--color-success)" : "var(--color-warning)",
+                marginBottom: "40px",
+              }}
+            >
+              {formatTime(frozenTime)}
+            </div>
+            {frozenTime >= targetSeconds ? (
+              <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
+                🎉 You met your goal of {targetSeconds} seconds!
+              </p>
+            ) : (
+              <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
+                Goal: {targetSeconds} seconds
+              </p>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", alignItems: "stretch", width: "100%" }}>
+              <button className="btn btn--primary" onClick={handleKeepTime} style={{ fontSize: "24px", padding: "20px 40px", fontWeight: "bold" }}>
+                ✓ Keep Time
+              </button>
+              <button
+                className="btn btn--secondary"
+                onClick={handleRedoAttempt}
+                disabled={attemptNumber >= 3}
+                style={{
+                  fontSize: "20px",
+                  padding: "16px 32px",
+                  opacity: attemptNumber >= 3 ? 0.5 : 1,
+                  cursor: attemptNumber >= 3 ? "not-allowed" : "pointer",
+                }}
+              >
+                {attemptNumber >= 3 ? "No Do-Overs Left" : "🔄 Do-Over"}
+              </button>
+            </div>
+            {attemptNumber < 3 && (
+              <p style={{ fontSize: "14px", color: "var(--color-text-secondary)", marginTop: "20px" }}>
+                {3 - attemptNumber} {3 - attemptNumber === 1 ? "do-over" : "do-overs"} remaining
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* COMPLETION SCREEN */}
+        {stage === "complete" && (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "80px", marginBottom: "20px" }}>🎉</div>
+            <h2 style={{ color: "var(--color-success)", marginBottom: "16px" }}>
+              Day {day} challenge Complete!
+            </h2>
+            <p style={{ fontSize: "24px", color: "var(--color-text)", fontWeight: "600" }}>
+              {formatTime(frozenTime)}
+            </p>
+            {!hasPaused && frozenTime > targetSeconds && (
+              <p style={{ fontSize: "18px", color: "var(--color-primary)", marginTop: "12px" }}>
+                {getCelebrationMessage(frozenTime)}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* FAILED SCREEN */}
+        {stage === "failed" && (
+          <div style={{ textAlign: "center", padding: "20px" }}>
+            <div style={{ fontSize: "60px", marginBottom: "20px" }}>📝</div>
+            <h2 style={{ color: "var(--color-text)", marginBottom: "12px" }}>
+              Day {day} challenge logged - tomorrow's a new opportunity!
+            </h2>
+            <p style={{ color: "var(--color-text-secondary)", fontSize: "18px" }}>
+              Ready to crush Day {day + 1} challenge tomorrow!
+            </p>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
