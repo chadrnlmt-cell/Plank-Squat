@@ -1,5 +1,6 @@
 // src/components/PlankTimer.js
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import Confetti from "react-confetti";
 import { db } from "../firebase";
 import {
   doc,
@@ -15,10 +16,8 @@ import { updateBadgesOnCompletion } from "../badgeHelpers";
 import BadgeCelebration from "./BadgeCelebration";
 
 // Simple helper to request/release screen wake lock
-// Uses the Screen Wake Lock API if supported by the browser.
 async function requestScreenWakeLock() {
   try {
-    // Extra defensive checks so we don't crash on older browsers
     if (
       typeof navigator !== "undefined" &&
       "wakeLock" in navigator &&
@@ -34,7 +33,6 @@ async function requestScreenWakeLock() {
   return null;
 }
 
-// Check if wake lock is supported
 function isWakeLockSupported() {
   return (
     typeof navigator !== "undefined" &&
@@ -44,7 +42,6 @@ function isWakeLockSupported() {
   );
 }
 
-// Recovery tip messages (rotate randomly)
 const RECOVERY_TIPS = [
   "Take some deep breaths",
   "Stretch those muscles",
@@ -52,7 +49,6 @@ const RECOVERY_TIPS = [
   "Stay strong, you've got this",
 ];
 
-// High celebration messages (+15s or more over goal)
 const HIGH_CELEBRATIONS = [
   "Crushing it! 💪",
   "You're on fire! 🔥",
@@ -63,12 +59,39 @@ const HIGH_CELEBRATIONS = [
   "Keep dominating! 💪",
 ];
 
-// Standard celebration messages (goal met, under +15s)
 const STANDARD_CELEBRATIONS = [
   "Goal achieved! Well done! ✓",
   "Target reached! Nice job!",
   "You did it! Goal accomplished!",
   "Success! You met today's goal!",
+];
+
+// Milestone config: multiplier -> banner details
+const MILESTONES = [
+  {
+    multiplier: 2,
+    label: "DOUBLE TIME!",
+    emoji: "🥇",
+    sub: "You doubled your goal — incredible!",
+    bg: "linear-gradient(135deg, #b45309 0%, #eab308 100%)",
+    confettiColors: ["#eab308", "#fbbf24", "#ffffff", "#f59e0b"],
+  },
+  {
+    multiplier: 3,
+    label: "TRIPLE TIME!",
+    emoji: "🔥",
+    sub: "You tripled your goal — you're a beast!",
+    bg: "linear-gradient(135deg, #6d28d9 0%, #a855f7 100%)",
+    confettiColors: ["#a855f7", "#d8b4fe", "#ffffff", "#7c3aed"],
+  },
+  {
+    multiplier: 4,
+    label: "QUADRUPLE TIME!",
+    emoji: "🚀",
+    sub: "You quadrupled your goal — LEGENDARY!",
+    bg: "linear-gradient(135deg, #c2410c 0%, #f97316 100%)",
+    confettiColors: ["#f97316", "#fed7aa", "#ffffff", "#ea580c"],
+  },
 ];
 
 export default function PlankTimer({
@@ -81,14 +104,14 @@ export default function PlankTimer({
   displayName,
   teamId,
   numberOfDays,
-  attemptNumber, // 1, 2, or 3
+  attemptNumber,
   onComplete,
   onCancel,
   onRedoUsed,
 }) {
-  const [stage, setStage] = useState("countdown"); 
+  const [stage, setStage] = useState("countdown");
   // Stages: countdown | active | paused | autoStopping | stillGoingPrompt | keepRedoScreen | complete | failed
-  
+
   const [countdown, setCountdown] = useState(3);
   const [elapsed, setElapsed] = useState(0);
   const [totalRecoveryUsed, setTotalRecoveryUsed] = useState(0);
@@ -108,6 +131,12 @@ export default function PlankTimer({
   const [newBadges, setNewBadges] = useState([]);
   const [showBadgeCelebration, setShowBadgeCelebration] = useState(false);
 
+  // Milestone celebration banner
+  const [activeMilestone, setActiveMilestone] = useState(null); // null or one of MILESTONES
+  const [showConfetti, setShowConfetti] = useState(false);
+  const milestonesFiredRef = useRef(new Set()); // track which multipliers already fired
+  const milestoneDismissTimerRef = useRef(null);
+
   const intervalRef = useRef(null);
   const recoveryIntervalRef = useRef(null);
   const startTimeRef = useRef(null);
@@ -115,6 +144,41 @@ export default function PlankTimer({
   const wakeLockRef = useRef(null);
 
   const RECOVERY_LIMIT = 60;
+
+  // Dismiss the milestone banner
+  const dismissMilestone = useCallback(() => {
+    setActiveMilestone(null);
+    setShowConfetti(false);
+    if (milestoneDismissTimerRef.current) {
+      clearTimeout(milestoneDismissTimerRef.current);
+      milestoneDismissTimerRef.current = null;
+    }
+  }, []);
+
+  // Fire a milestone banner
+  const fireMilestone = useCallback((milestone) => {
+    // Clear any existing banner first
+    if (milestoneDismissTimerRef.current) {
+      clearTimeout(milestoneDismissTimerRef.current);
+    }
+    setActiveMilestone(milestone);
+    setShowConfetti(true);
+    // Auto-dismiss after 10 seconds
+    milestoneDismissTimerRef.current = setTimeout(() => {
+      setActiveMilestone(null);
+      setShowConfetti(false);
+      milestoneDismissTimerRef.current = null;
+    }, 10000);
+  }, []);
+
+  // Cleanup milestone timer on unmount
+  useEffect(() => {
+    return () => {
+      if (milestoneDismissTimerRef.current) {
+        clearTimeout(milestoneDismissTimerRef.current);
+      }
+    };
+  }, []);
 
   // Check wake lock support on mount
   useEffect(() => {
@@ -144,7 +208,7 @@ export default function PlankTimer({
     }
   }, [stage, countdown, pausedElapsed]);
 
-  // Active timer
+  // Active timer — also checks milestones
   useEffect(() => {
     if (stage === "active") {
       intervalRef.current = setInterval(() => {
@@ -152,10 +216,19 @@ export default function PlankTimer({
         const total = Math.floor((now - startTimeRef.current) / 1000);
         setElapsed(total);
 
-        const shouldPrompt = 
-          (total === 300) || 
+        // Check milestones (2x, 3x, 4x)
+        for (const milestone of MILESTONES) {
+          const threshold = targetSeconds * milestone.multiplier;
+          if (total === threshold && !milestonesFiredRef.current.has(milestone.multiplier)) {
+            milestonesFiredRef.current.add(milestone.multiplier);
+            fireMilestone(milestone);
+          }
+        }
+
+        const shouldPrompt =
+          (total === 300) ||
           (total > 300 && (total - 300) % 120 === 0);
-        
+
         if (shouldPrompt) {
           clearInterval(intervalRef.current);
           setFrozenTime(total);
@@ -179,7 +252,7 @@ export default function PlankTimer({
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [stage, hasPaused, targetSeconds]);
+  }, [stage, hasPaused, targetSeconds, fireMilestone]);
 
   // Auto-stop animation
   useEffect(() => {
@@ -226,7 +299,7 @@ export default function PlankTimer({
       }, 20000);
       return () => clearTimeout(timer);
     }
-  }, [stage]);
+  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Recovery timer
   useEffect(() => {
@@ -266,9 +339,9 @@ export default function PlankTimer({
     const ensureWakeLock = async () => {
       if (
         stage === "countdown" ||
-        stage === "active" || 
+        stage === "active" ||
         stage === "paused" ||
-        stage === "autoStopping" || 
+        stage === "autoStopping" ||
         stage === "stillGoingPrompt" ||
         stage === "keepRedoScreen"
       ) {
@@ -299,11 +372,11 @@ export default function PlankTimer({
         hasWakeLockApi &&
         document.visibilityState === "visible" &&
         (stage === "countdown" ||
-         stage === "active" || 
-         stage === "paused" ||
-         stage === "autoStopping" || 
-         stage === "stillGoingPrompt" ||
-         stage === "keepRedoScreen") &&
+          stage === "active" ||
+          stage === "paused" ||
+          stage === "autoStopping" ||
+          stage === "stillGoingPrompt" ||
+          stage === "keepRedoScreen") &&
         !wakeLockRef.current
       ) {
         const wl = await requestScreenWakeLock();
@@ -327,7 +400,8 @@ export default function PlankTimer({
       setPausedElapsed(elapsed);
       setCurrentPauseStart(Date.now());
       setCurrentRecoveryTime(0);
-      const randomTip = RECOVERY_TIPS[Math.floor(Math.random() * RECOVERY_TIPS.length)];
+      const randomTip =
+        RECOVERY_TIPS[Math.floor(Math.random() * RECOVERY_TIPS.length)];
       setRecoveryTip(randomTip);
       setStage("paused");
     }
@@ -353,6 +427,7 @@ export default function PlankTimer({
   };
 
   const handleDone = () => {
+    dismissMilestone();
     setFrozenTime(elapsed);
     setStage("keepRedoScreen");
   };
@@ -380,10 +455,15 @@ export default function PlankTimer({
   const getCelebrationMessage = (actualValue) => {
     const overAmount = actualValue - targetSeconds;
     if (overAmount >= 15) {
-      const msg = HIGH_CELEBRATIONS[Math.floor(Math.random() * HIGH_CELEBRATIONS.length)];
+      const msg =
+        HIGH_CELEBRATIONS[
+          Math.floor(Math.random() * HIGH_CELEBRATIONS.length)
+        ];
       return `+${overAmount} seconds over goal! ${msg}`;
     } else {
-      return STANDARD_CELEBRATIONS[Math.floor(Math.random() * STANDARD_CELEBRATIONS.length)];
+      return STANDARD_CELEBRATIONS[
+        Math.floor(Math.random() * STANDARD_CELEBRATIONS.length)
+      ];
     }
   };
 
@@ -399,10 +479,16 @@ export default function PlankTimer({
       const currentTotalSeconds = currentData.totalSuccessfulSeconds || 0;
 
       const newTotalDays = currentTotalDays + 1;
-      const newSuccessfulDays = success ? currentSuccessfulDays + 1 : currentSuccessfulDays;
+      const newSuccessfulDays = success
+        ? currentSuccessfulDays + 1
+        : currentSuccessfulDays;
       const newBest = Math.max(currentBest, success ? actualValue : 0);
-      const newTotalSeconds = currentTotalSeconds + (success ? actualValue : 0);
-      const newAverage = newSuccessfulDays > 0 ? Math.round(newTotalSeconds / newSuccessfulDays) : 0;
+      const newTotalSeconds =
+        currentTotalSeconds + (success ? actualValue : 0);
+      const newAverage =
+        newSuccessfulDays > 0
+          ? Math.round(newTotalSeconds / newSuccessfulDays)
+          : 0;
 
       await addDoc(collection(db, "attempts"), {
         userId: userId,
@@ -425,7 +511,6 @@ export default function PlankTimer({
           teamId: teamId || null,
         });
 
-        // Update badges and check for new badges
         const badgeResult = await updateBadgesOnCompletion({
           userId: userId,
           challengeId: challengeId,
@@ -509,12 +594,14 @@ export default function PlankTimer({
     }
   }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Timer color: Blue -> Green -> Gold -> Purple -> Orange
   const getTimerColor = () => {
     if (stage === "autoStopping") return "#22c55e";
-    if (elapsed < targetSeconds * 0.5) return "#3b82f6";
-    if (elapsed < targetSeconds) return "#3b82f6";
-    if (elapsed < targetSeconds * 2) return "#22c55e";
-    return "#eab308";
+    if (elapsed < targetSeconds) return "#3b82f6";          // Blue (under goal)
+    if (elapsed < targetSeconds * 2) return "#22c55e";     // Green (goal to 2x)
+    if (elapsed < targetSeconds * 3) return "#eab308";     // Gold (2x to 3x)
+    if (elapsed < targetSeconds * 4) return "#a855f7";     // Purple (3x to 4x)
+    return "#f97316";                                       // Orange (4x+)
   };
 
   const formatTime = (seconds) => {
@@ -544,6 +631,90 @@ export default function PlankTimer({
           onClose={() => setShowBadgeCelebration(false)}
         />
       )}
+
+      {/* Confetti — renders behind the banner, above the timer */}
+      {showConfetti && activeMilestone && (
+        <Confetti
+          style={{ position: "fixed", top: 0, left: 0, zIndex: 1010, pointerEvents: "none" }}
+          width={window.innerWidth}
+          height={window.innerHeight}
+          numberOfPieces={220}
+          recycle={false}
+          gravity={0.25}
+          colors={activeMilestone.confettiColors}
+        />
+      )}
+
+      {/* Milestone Banner — top of screen, non-blocking */}
+      {activeMilestone && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 1020,
+            background: activeMilestone.bg,
+            padding: "18px 24px 14px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+            animation: "slideDownBanner 0.4s ease-out",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+            <span style={{ fontSize: "40px", lineHeight: 1 }}>{activeMilestone.emoji}</span>
+            <div>
+              <div
+                style={{
+                  fontSize: "22px",
+                  fontWeight: "900",
+                  color: "#ffffff",
+                  letterSpacing: "0.04em",
+                  textShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                }}
+              >
+                {activeMilestone.label}
+              </div>
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "rgba(255,255,255,0.88)",
+                  marginTop: "2px",
+                  fontWeight: "500",
+                }}
+              >
+                {activeMilestone.sub}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={dismissMilestone}
+            style={{
+              background: "rgba(255,255,255,0.25)",
+              border: "none",
+              borderRadius: "8px",
+              color: "#ffffff",
+              fontSize: "18px",
+              fontWeight: "bold",
+              cursor: "pointer",
+              padding: "6px 12px",
+              flexShrink: 0,
+            }}
+            aria-label="Dismiss celebration"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes slideDownBanner {
+          from { transform: translateY(-100%); opacity: 0; }
+          to   { transform: translateY(0);    opacity: 1; }
+        }
+      `}</style>
 
       <div
         style={{
@@ -620,7 +791,10 @@ export default function PlankTimer({
                   color: "var(--color-warning)",
                   marginBottom: "40px",
                   padding: attemptNumber === 3 ? "30px" : "0",
-                  backgroundColor: attemptNumber === 3 ? "rgba(251, 191, 36, 0.2)" : "transparent",
+                  backgroundColor:
+                    attemptNumber === 3
+                      ? "rgba(251, 191, 36, 0.2)"
+                      : "transparent",
                   borderRadius: attemptNumber === 3 ? "12px" : "0",
                   fontWeight: attemptNumber === 3 ? "bold" : "normal",
                 }}
@@ -649,8 +823,20 @@ export default function PlankTimer({
         )}
 
         {/* ACTIVE OR PAUSED */}
-        {(stage === "active" || stage === "paused" || stage === "autoStopping") && (
-          <div style={{ textAlign: "center", width: "100%", maxWidth: "500px", padding: "0 20px" }}>
+        {(stage === "active" ||
+          stage === "paused" ||
+          stage === "autoStopping") && (
+          <div
+            style={{
+              textAlign: "center",
+              width: "100%",
+              maxWidth: "500px",
+              padding: "0 20px",
+              // Push content down when milestone banner is showing
+              marginTop: activeMilestone ? "90px" : "0",
+              transition: "margin-top 0.4s ease",
+            }}
+          >
             {stage === "paused" && (
               <div
                 style={{
@@ -670,7 +856,13 @@ export default function PlankTimer({
               </div>
             )}
 
-            <div style={{ fontSize: "20px", color: "var(--color-text-secondary)", marginBottom: "40px" }}>
+            <div
+              style={{
+                fontSize: "20px",
+                color: "var(--color-text-secondary)",
+                marginBottom: "40px",
+              }}
+            >
               Day {day} challenge Goal: {targetSeconds} seconds
             </div>
 
@@ -687,31 +879,72 @@ export default function PlankTimer({
             </div>
 
             {stage === "paused" && (
-              <div style={{ fontSize: "24px", color: "var(--color-warning)", marginBottom: "30px", textAlign: "center" }}>
+              <div
+                style={{
+                  fontSize: "24px",
+                  color: "var(--color-warning)",
+                  marginBottom: "30px",
+                  textAlign: "center",
+                }}
+              >
                 <div style={{ fontWeight: "bold" }}>⏸️ PAUSED</div>
-                <div style={{ fontSize: "18px", marginTop: "12px", color: "var(--color-text-secondary)" }}>
+                <div
+                  style={{
+                    fontSize: "18px",
+                    marginTop: "12px",
+                    color: "var(--color-text-secondary)",
+                  }}
+                >
                   Recovery: {formatTime(Math.max(0, recoveryRemaining))}
                 </div>
               </div>
             )}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px", alignItems: "stretch", width: "100%" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
+                alignItems: "stretch",
+                width: "100%",
+              }}
+            >
               {stage === "active" && (
                 <>
                   {!hasPaused && elapsed >= targetSeconds && (
-                    <button className="btn btn--primary" onClick={handleDone} style={{ fontSize: "24px", padding: "20px 40px", fontWeight: "bold" }}>
+                    <button
+                      className="btn btn--primary"
+                      onClick={handleDone}
+                      style={{
+                        fontSize: "24px",
+                        padding: "20px 40px",
+                        fontWeight: "bold",
+                      }}
+                    >
                       ✓ Done
                     </button>
                   )}
                   {shouldShowPauseButton && (
-                    <button className="btn btn--secondary" onClick={handlePause} style={{ fontSize: "20px", padding: "16px 32px" }}>
+                    <button
+                      className="btn btn--secondary"
+                      onClick={handlePause}
+                      style={{ fontSize: "20px", padding: "16px 32px" }}
+                    >
                       Pause
                     </button>
                   )}
                 </>
               )}
               {stage === "paused" && (
-                <button className="btn btn--primary" onClick={handleResume} style={{ fontSize: "24px", padding: "20px 40px", fontWeight: "bold" }}>
+                <button
+                  className="btn btn--primary"
+                  onClick={handleResume}
+                  style={{
+                    fontSize: "24px",
+                    padding: "20px 40px",
+                    fontWeight: "bold",
+                  }}
+                >
                   Resume
                 </button>
               )}
@@ -738,16 +971,46 @@ export default function PlankTimer({
               zIndex: 1002,
             }}
           >
-            <div style={{ fontSize: "48px", fontWeight: "bold", color: "white", marginBottom: "20px", textAlign: "center", padding: "0 20px" }}>
+            <div
+              style={{
+                fontSize: "48px",
+                fontWeight: "bold",
+                color: "white",
+                marginBottom: "20px",
+                textAlign: "center",
+                padding: "0 20px",
+              }}
+            >
               Still crushing it? Tap here!
             </div>
-            <div style={{ fontSize: "20px", color: "white", marginBottom: "40px", opacity: 0.9 }}>
+            <div
+              style={{
+                fontSize: "20px",
+                color: "white",
+                marginBottom: "40px",
+                opacity: 0.9,
+              }}
+            >
               (Tap anywhere)
             </div>
-            <div style={{ fontSize: "80px", fontWeight: "bold", color: "white", textAlign: "center" }}>
+            <div
+              style={{
+                fontSize: "80px",
+                fontWeight: "bold",
+                color: "white",
+                textAlign: "center",
+              }}
+            >
               {stillGoingCountdown}
             </div>
-            <div style={{ fontSize: "24px", color: "white", marginTop: "10px", opacity: 0.9 }}>
+            <div
+              style={{
+                fontSize: "24px",
+                color: "white",
+                marginTop: "10px",
+                opacity: 0.9,
+              }}
+            >
               seconds
             </div>
           </div>
@@ -755,29 +1018,69 @@ export default function PlankTimer({
 
         {/* KEEP TIME OR DO-OVER SCREEN */}
         {stage === "keepRedoScreen" && (
-          <div style={{ textAlign: "center", width: "100%", maxWidth: "500px", padding: "0 20px" }}>
-            <h2 style={{ color: "var(--color-text)", marginBottom: "20px" }}>Your Time</h2>
+          <div
+            style={{
+              textAlign: "center",
+              width: "100%",
+              maxWidth: "500px",
+              padding: "0 20px",
+            }}
+          >
+            <h2 style={{ color: "var(--color-text)", marginBottom: "20px" }}>
+              Your Time
+            </h2>
             <div
               style={{
                 fontSize: "80px",
                 fontWeight: "bold",
-                color: frozenTime >= targetSeconds ? "var(--color-success)" : "var(--color-warning)",
+                color:
+                  frozenTime >= targetSeconds
+                    ? "var(--color-success)"
+                    : "var(--color-warning)",
                 marginBottom: "40px",
               }}
             >
               {formatTime(frozenTime)}
             </div>
             {frozenTime >= targetSeconds ? (
-              <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
+              <p
+                style={{
+                  fontSize: "18px",
+                  color: "var(--color-text)",
+                  marginBottom: "40px",
+                }}
+              >
                 🎉 You met your goal of {targetSeconds} seconds!
               </p>
             ) : (
-              <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
+              <p
+                style={{
+                  fontSize: "18px",
+                  color: "var(--color-text)",
+                  marginBottom: "40px",
+                }}
+              >
                 Goal: {targetSeconds} seconds
               </p>
             )}
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px", alignItems: "stretch", width: "100%" }}>
-              <button className="btn btn--primary" onClick={handleKeepTime} style={{ fontSize: "24px", padding: "20px 40px", fontWeight: "bold" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
+                alignItems: "stretch",
+                width: "100%",
+              }}
+            >
+              <button
+                className="btn btn--primary"
+                onClick={handleKeepTime}
+                style={{
+                  fontSize: "24px",
+                  padding: "20px 40px",
+                  fontWeight: "bold",
+                }}
+              >
                 ✓ Keep Time
               </button>
               <button
@@ -795,8 +1098,15 @@ export default function PlankTimer({
               </button>
             </div>
             {attemptNumber < 3 && (
-              <p style={{ fontSize: "14px", color: "var(--color-text-secondary)", marginTop: "20px" }}>
-                {3 - attemptNumber} {3 - attemptNumber === 1 ? "do-over" : "do-overs"} remaining
+              <p
+                style={{
+                  fontSize: "14px",
+                  color: "var(--color-text-secondary)",
+                  marginTop: "20px",
+                }}
+              >
+                {3 - attemptNumber}{" "}
+                {3 - attemptNumber === 1 ? "do-over" : "do-overs"} remaining
               </p>
             )}
           </div>
@@ -806,14 +1116,28 @@ export default function PlankTimer({
         {stage === "complete" && (
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "80px", marginBottom: "20px" }}>🎉</div>
-            <h2 style={{ color: "var(--color-success)", marginBottom: "16px" }}>
+            <h2
+              style={{ color: "var(--color-success)", marginBottom: "16px" }}
+            >
               Day {day} challenge Complete!
             </h2>
-            <p style={{ fontSize: "24px", color: "var(--color-text)", fontWeight: "600" }}>
+            <p
+              style={{
+                fontSize: "24px",
+                color: "var(--color-text)",
+                fontWeight: "600",
+              }}
+            >
               {formatTime(frozenTime)}
             </p>
             {!hasPaused && frozenTime > targetSeconds && (
-              <p style={{ fontSize: "18px", color: "var(--color-primary)", marginTop: "12px" }}>
+              <p
+                style={{
+                  fontSize: "18px",
+                  color: "var(--color-primary)",
+                  marginTop: "12px",
+                }}
+              >
                 {getCelebrationMessage(frozenTime)}
               </p>
             )}
@@ -824,10 +1148,17 @@ export default function PlankTimer({
         {stage === "failed" && (
           <div style={{ textAlign: "center", padding: "20px" }}>
             <div style={{ fontSize: "60px", marginBottom: "20px" }}>📝</div>
-            <h2 style={{ color: "var(--color-text)", marginBottom: "12px" }}>
+            <h2
+              style={{ color: "var(--color-text)", marginBottom: "12px" }}
+            >
               Day {day} challenge logged - tomorrow's a new opportunity!
             </h2>
-            <p style={{ color: "var(--color-text-secondary)", fontSize: "18px" }}>
+            <p
+              style={{
+                color: "var(--color-text-secondary)",
+                fontSize: "18px",
+              }}
+            >
               Ready to crush Day {day + 1} challenge tomorrow!
             </p>
           </div>
