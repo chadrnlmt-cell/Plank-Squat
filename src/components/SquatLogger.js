@@ -71,13 +71,14 @@ export default function SquatLogger({
       });
 
       const nextDay = day + 1;
-      const isComplete = nextDay > numberOfDays;
+      // FIXED: Keep status as "active" even when player finishes all days
+      // The sync function will set it to "completed" at midnight when challenge globally ends
 
       await updateDoc(userChallengeRef, {
         currentDay: nextDay,
         lastCompletedDay: day,
         lastCompletedDate: Timestamp.fromDate(getPhoenixDate()),
-        status: isComplete ? "completed" : "active",
+        // status stays "active" - will be set to "completed" by sync at midnight
         totalDaysAttempted: newTotalDays,
         successfulDaysCount: newSuccessfulDays,
         bestPerformance: newBest,
