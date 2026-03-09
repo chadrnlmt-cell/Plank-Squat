@@ -18,8 +18,8 @@ function getChallengeBadgeData(userStatsData, challengeId) {
   if (!userStatsData.badges) {
     return {
       currentStreak: 0,
-      longestStreak: 0,
-      streakBadges: [],
+      currentStreakBadgeLevel: 0, // Highest badge earned in current streak (0, 3, 7, 14, 21, 28)
+      completedStreakBadges: { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 }, // Count of each badge earned from completed streaks
       doubleBadgeCount: 0,
       tripleBadgeCount: 0,
       quadrupleBadgeCount: 0,
@@ -31,8 +31,8 @@ function getChallengeBadgeData(userStatsData, challengeId) {
   if (!userStatsData.badges.challenges) {
     return {
       currentStreak: 0,
-      longestStreak: 0,
-      streakBadges: [],
+      currentStreakBadgeLevel: 0,
+      completedStreakBadges: { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
       doubleBadgeCount: 0,
       tripleBadgeCount: 0,
       quadrupleBadgeCount: 0,
@@ -41,18 +41,17 @@ function getChallengeBadgeData(userStatsData, challengeId) {
     };
   }
 
-  return (
-    userStatsData.badges.challenges[challengeId] || {
-      currentStreak: 0,
-      longestStreak: 0,
-      streakBadges: [],
-      doubleBadgeCount: 0,
-      tripleBadgeCount: 0,
-      quadrupleBadgeCount: 0,
-      totalPlankSeconds: 0,
-      timeBadges: [],
-    }
-  );
+  const existing = userStatsData.badges.challenges[challengeId] || {};
+  return {
+    currentStreak: existing.currentStreak || 0,
+    currentStreakBadgeLevel: existing.currentStreakBadgeLevel || 0,
+    completedStreakBadges: existing.completedStreakBadges || { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
+    doubleBadgeCount: existing.doubleBadgeCount || 0,
+    tripleBadgeCount: existing.tripleBadgeCount || 0,
+    quadrupleBadgeCount: existing.quadrupleBadgeCount || 0,
+    totalPlankSeconds: existing.totalPlankSeconds || 0,
+    timeBadges: existing.timeBadges || [],
+  };
 }
 
 /**
@@ -94,21 +93,38 @@ async function calculateStreakContinuation(
 }
 
 /**
- * Calculate which streak badges should be awarded
- * Badges: 7, 14, 21, 28 days
- * Cumulative - once earned, kept forever
+ * Calculate streak badge updates
+ * Returns: { newBadgeLevel, completedBadges, newlyEarnedBadge }
  */
-function calculateStreakBadges(currentStreak, existingBadges) {
-  const possibleBadges = [7, 14, 21, 28];
-  const earned = [...existingBadges];
+function calculateStreakBadges(currentStreak, currentBadgeLevel, existingCompletedBadges) {
+  const milestones = [3, 7, 14, 21, 28];
+  let newBadgeLevel = currentBadgeLevel;
+  const completedBadges = { ...existingCompletedBadges };
+  let newlyEarnedBadge = null;
 
-  for (const threshold of possibleBadges) {
-    if (currentStreak >= threshold && !earned.includes(threshold)) {
-      earned.push(threshold);
+  // Find the highest milestone reached in current streak
+  for (const milestone of milestones) {
+    if (currentStreak >= milestone && milestone > currentBadgeLevel) {
+      newBadgeLevel = milestone;
+      newlyEarnedBadge = milestone;
     }
   }
 
-  return earned.sort((a, b) => a - b);
+  return { newBadgeLevel, completedBadges, newlyEarnedBadge };
+}
+
+/**
+ * When a streak breaks, save the highest badge from that streak
+ * Called when a rest day occurs
+ */
+function finalizeStreakBadge(currentBadgeLevel, completedBadges) {
+  if (currentBadgeLevel > 0) {
+    // Add one count to the completed badge level
+    const updated = { ...completedBadges };
+    updated[currentBadgeLevel] = (updated[currentBadgeLevel] || 0) + 1;
+    return updated;
+  }
+  return completedBadges;
 }
 
 /**
@@ -134,19 +150,14 @@ function calculateMultiplierBadges(actualValue, targetValue, currentCounts) {
 
 /**
  * Calculate time badges (plank only)
- * Every 30 minutes: 1800s, 3600s, 5400s, etc.
+ * Every 30 minutes: 1800s, 3600s, 7200s, 18000s, 36000s
  */
 function calculateTimeBadges(totalSeconds, existingBadges) {
   const earned = [...existingBadges];
-  const milestones = [];
-
-  // Generate milestones up to total seconds
-  for (let i = 1800; i <= totalSeconds; i += 1800) {
-    milestones.push(i);
-  }
+  const milestones = [1800, 3600, 7200, 18000, 36000];
 
   for (const milestone of milestones) {
-    if (!earned.includes(milestone)) {
+    if (totalSeconds >= milestone && !earned.includes(milestone)) {
       earned.push(milestone);
     }
   }
@@ -187,14 +198,24 @@ export async function updateBadgesOnCompletion({
       currentBadgeData.currentStreak || 0
     );
 
-    const longestStreak = Math.max(
-      currentBadgeData.longestStreak || 0,
-      newStreak
-    );
+    let updatedCompletedBadges = currentBadgeData.completedStreakBadges;
+    let currentBadgeLevel = currentBadgeData.currentStreakBadgeLevel;
 
-    // Calculate streak badges
-    const oldStreakBadges = currentBadgeData.streakBadges || [];
-    const newStreakBadges = calculateStreakBadges(newStreak, oldStreakBadges);
+    // If streak broke, finalize the previous streak's badge
+    if (!continues && currentBadgeData.currentStreak > 0) {
+      updatedCompletedBadges = finalizeStreakBadge(
+        currentBadgeData.currentStreakBadgeLevel,
+        currentBadgeData.completedStreakBadges
+      );
+      currentBadgeLevel = 0; // Reset for new streak
+    }
+
+    // Calculate streak badges for current/new streak
+    const {
+      newBadgeLevel,
+      completedBadges,
+      newlyEarnedBadge,
+    } = calculateStreakBadges(newStreak, currentBadgeLevel, updatedCompletedBadges);
 
     // Calculate multiplier badges
     const oldMultipliers = {
@@ -221,11 +242,9 @@ export async function updateBadgesOnCompletion({
     // Determine newly earned badges for celebration
     const newBadges = [];
 
-    // New streak badges
-    for (const badge of newStreakBadges) {
-      if (!oldStreakBadges.includes(badge)) {
-        newBadges.push({ type: "streak", value: badge });
-      }
+    // New streak badge
+    if (newlyEarnedBadge) {
+      newBadges.push({ type: "streak", value: newlyEarnedBadge });
     }
 
     // New multiplier badges
@@ -266,8 +285,8 @@ export async function updateBadgesOnCompletion({
     // Update Firestore
     const updatedBadgeData = {
       currentStreak: newStreak,
-      longestStreak,
-      streakBadges: newStreakBadges,
+      currentStreakBadgeLevel: newBadgeLevel,
+      completedStreakBadges: completedBadges,
       doubleBadgeCount: newMultipliers.doubleBadgeCount,
       tripleBadgeCount: newMultipliers.tripleBadgeCount,
       quadrupleBadgeCount: newMultipliers.quadrupleBadgeCount,
@@ -283,6 +302,7 @@ export async function updateBadgesOnCompletion({
     console.log("Badges updated:", {
       challengeId,
       newStreak,
+      currentBadgeLevel: newBadgeLevel,
       newBadges: newBadges.length,
     });
 
@@ -303,7 +323,7 @@ export async function getAllUserBadges(userId) {
 
     if (!userStatsSnap.exists()) {
       return {
-        allStreakBadges: [],
+        allStreakBadges: { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
         allMultipliers: { double: 0, triple: 0, quadruple: 0 },
         allTimeBadges: [],
         byChallengeId: {},
@@ -314,7 +334,7 @@ export async function getAllUserBadges(userId) {
     const challenges = userStatsData.badges?.challenges || {};
 
     // Aggregate across all challenges
-    const allStreakBadgesSet = new Set();
+    const allStreakBadges = { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 };
     let totalDouble = 0;
     let totalTriple = 0;
     let totalQuadruple = 0;
@@ -323,9 +343,11 @@ export async function getAllUserBadges(userId) {
     for (const challengeId in challenges) {
       const badgeData = challenges[challengeId];
 
-      // Collect streak badges
-      if (badgeData.streakBadges) {
-        badgeData.streakBadges.forEach((b) => allStreakBadgesSet.add(b));
+      // Sum completed streak badges
+      if (badgeData.completedStreakBadges) {
+        for (const level in badgeData.completedStreakBadges) {
+          allStreakBadges[level] = (allStreakBadges[level] || 0) + badgeData.completedStreakBadges[level];
+        }
       }
 
       // Sum multipliers
@@ -340,7 +362,7 @@ export async function getAllUserBadges(userId) {
     }
 
     return {
-      allStreakBadges: Array.from(allStreakBadgesSet).sort((a, b) => a - b),
+      allStreakBadges,
       allMultipliers: {
         double: totalDouble,
         triple: totalTriple,
@@ -352,7 +374,7 @@ export async function getAllUserBadges(userId) {
   } catch (error) {
     console.error("Error getting all user badges:", error);
     return {
-      allStreakBadges: [],
+      allStreakBadges: { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
       allMultipliers: { double: 0, triple: 0, quadruple: 0 },
       allTimeBadges: [],
       byChallengeId: {},

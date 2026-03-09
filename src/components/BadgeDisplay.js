@@ -2,12 +2,13 @@
 import React from "react";
 
 /**
- * Badge display component - shows earned badges with progress indicators
- * Used in Active tab and Profile
+ * Badge display component - Progressive reveal with left-to-right fill
+ * Shows only the NEXT streak badge to earn, with completed badges below
  */
 export default function BadgeDisplay({
-  streakBadges = [],
   currentStreak = 0,
+  currentStreakBadgeLevel = 0,
+  completedStreakBadges = { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
   doubleBadgeCount = 0,
   tripleBadgeCount = 0,
   quadrupleBadgeCount = 0,
@@ -26,19 +27,22 @@ export default function BadgeDisplay({
     return `${mins}m`;
   };
 
-  // Get next streak milestone
+  // Get next streak milestone to achieve
   const getNextStreakMilestone = () => {
-    const milestones = [7, 14, 21, 28];
+    const milestones = [3, 7, 14, 21, 28];
     for (const m of milestones) {
       if (currentStreak < m) return m;
     }
-    return null;
+    return null; // Maxed out at 28
   };
 
   // Get next time milestone
   const getNextTimeMilestone = () => {
-    const nextMilestone = Math.ceil(totalPlankSeconds / 1800) * 1800;
-    return nextMilestone > totalPlankSeconds ? nextMilestone : null;
+    const milestones = [1800, 3600, 7200, 18000, 36000];
+    for (const m of milestones) {
+      if (totalPlankSeconds < m) return m;
+    }
+    return null;
   };
 
   const nextStreakMilestone = getNextStreakMilestone();
@@ -57,41 +61,108 @@ export default function BadgeDisplay({
     color: "#78350f",
   };
 
+  // Count total completed streak badges for display
+  const hasCompletedBadges = Object.values(completedStreakBadges).some(count => count > 0);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "12px" : "16px" }}>
-      {/* Streak Badges */}
-      <div>
-        <div style={{ fontSize: compact ? "12px" : "13px", fontWeight: "600", marginBottom: "8px", color: "var(--color-text-secondary)" }}>
-          🔥 Streak Badges
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-          {[7, 14, 21, 28].map((days) => {
-            const earned = streakBadges.includes(days);
-            return (
+      {/* Streak Progress - Only show NEXT badge */}
+      {nextStreakMilestone && (
+        <div>
+          <div style={{ fontSize: compact ? "12px" : "13px", fontWeight: "600", marginBottom: "8px", color: "var(--color-text-secondary)" }}>
+            🔥 Streak Progress
+          </div>
+          
+          {/* Next Badge Card */}
+          <div
+            style={{
+              padding: "12px",
+              backgroundColor: "#f9fafb",
+              borderRadius: "8px",
+              border: "2px solid #e5e7eb",
+            }}
+          >
+            <div style={{ fontSize: "13px", fontWeight: "600", marginBottom: "8px", color: "#6b7280" }}>
+              Next Badge: {nextStreakMilestone} Day Streak 🔥
+            </div>
+            
+            {/* Progress Bar Badge */}
+            <div
+              style={{
+                position: "relative",
+                width: "100%",
+                height: "40px",
+                backgroundColor: "#e5e7eb",
+                borderRadius: "8px",
+                overflow: "hidden",
+                border: "2px solid #d1d5db",
+              }}
+            >
+              {/* Filled portion */}
               <div
-                key={days}
                 style={{
-                  ...badgeStyle,
-                  opacity: earned ? 1 : 0.3,
-                  backgroundColor: earned ? "#fef3c7" : "#f3f4f6",
-                  border: earned ? "2px solid #fbbf24" : "2px solid #d1d5db",
-                  color: earned ? "#78350f" : "#6b7280",
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  height: "100%",
+                  width: `${(currentStreak / nextStreakMilestone) * 100}%`,
+                  backgroundColor: "#fbbf24",
+                  transition: "width 0.5s ease",
+                  borderRight: currentStreak > 0 && currentStreak < nextStreakMilestone ? "2px solid #f59e0b" : "none",
+                }}
+              />
+              
+              {/* Text overlay */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "16px",
+                  fontWeight: "bold",
+                  color: currentStreak >= nextStreakMilestone / 2 ? "#78350f" : "#374151",
+                  textShadow: "0 1px 2px rgba(255,255,255,0.8)",
                 }}
               >
-                🔥 {days}d
+                {currentStreak}/{nextStreakMilestone} days
               </div>
-            );
-          })}
-        </div>
-        {showProgress && nextStreakMilestone && (
-          <div style={{ marginTop: "8px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
-            Progress: {currentStreak}/{nextStreakMilestone} days
-            <div style={{ width: "100%", height: "6px", backgroundColor: "#e5e7eb", borderRadius: "3px", marginTop: "4px", overflow: "hidden" }}>
-              <div style={{ width: `${(currentStreak / nextStreakMilestone) * 100}%`, height: "100%", backgroundColor: "#fbbf24", transition: "width 0.3s ease" }} />
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Completed Streak Badges */}
+      {hasCompletedBadges && (
+        <div>
+          <div style={{ fontSize: compact ? "12px" : "13px", fontWeight: "600", marginBottom: "8px", color: "var(--color-text-secondary)" }}>
+            🏆 Earned Streak Badges
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            {[28, 21, 14, 7, 3].map((days) => {
+              const count = completedStreakBadges[days] || 0;
+              if (count === 0) return null;
+              return (
+                <div
+                  key={days}
+                  style={{
+                    ...badgeStyle,
+                    backgroundColor: "#fef3c7",
+                    border: "2px solid #fbbf24",
+                    color: "#78350f",
+                  }}
+                >
+                  🔥 {days}d {count > 1 ? `(x${count})` : ""}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Performance Badges */}
       <div>
