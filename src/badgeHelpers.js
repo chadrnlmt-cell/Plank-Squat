@@ -113,19 +113,19 @@ function calculateStreakBadges(currentStreak, existingBadges) {
 
 /**
  * Calculate multiplier badge counts
+ * FIXED: Only award the HIGHEST achievement badge (not multiple)
  * Check if today's achievement was 2x, 3x, or 4x the target
  */
 function calculateMultiplierBadges(actualValue, targetValue, currentCounts) {
   const multiplier = actualValue / targetValue;
   const newCounts = { ...currentCounts };
 
+  // Only award the highest achievement
   if (multiplier >= 4) {
     newCounts.quadrupleBadgeCount = (newCounts.quadrupleBadgeCount || 0) + 1;
-  }
-  if (multiplier >= 3) {
+  } else if (multiplier >= 3) {
     newCounts.tripleBadgeCount = (newCounts.tripleBadgeCount || 0) + 1;
-  }
-  if (multiplier >= 2) {
+  } else if (multiplier >= 2) {
     newCounts.doubleBadgeCount = (newCounts.doubleBadgeCount || 0) + 1;
   }
 
