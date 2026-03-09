@@ -795,8 +795,9 @@ export default function App() {
                               📛 Challenge Badges
                             </div>
                             <BadgeDisplay
-                              streakBadges={badges.streakBadges || []}
                               currentStreak={badges.currentStreak || 0}
+                              currentStreakBadgeLevel={badges.currentStreakBadgeLevel || 0}
+                              completedStreakBadges={badges.completedStreakBadges || { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 }}
                               doubleBadgeCount={badges.doubleBadgeCount || 0}
                               tripleBadgeCount={badges.tripleBadgeCount || 0}
                               quadrupleBadgeCount={badges.quadrupleBadgeCount || 0}
