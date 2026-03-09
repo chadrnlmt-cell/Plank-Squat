@@ -3,7 +3,7 @@ import React from "react";
 
 /**
  * Badge display component - Progressive reveal with left-to-right fill
- * Shows only the NEXT streak badge to earn, with completed badges below
+ * Shows only the NEXT badge to earn, with completed badges below
  */
 export default function BadgeDisplay({
   currentStreak = 0,
@@ -12,8 +12,9 @@ export default function BadgeDisplay({
   doubleBadgeCount = 0,
   tripleBadgeCount = 0,
   quadrupleBadgeCount = 0,
-  timeBadges = [],
   totalPlankSeconds = 0,
+  currentTimeBadgeLevel = 0,
+  completedTimeBadges = {},
   showProgress = true,
   compact = false,
 }) {
@@ -22,7 +23,10 @@ export default function BadgeDisplay({
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     if (hours > 0) {
-      return `${hours}h ${mins}m`;
+      if (mins > 0) {
+        return `${hours}h ${mins}m`;
+      }
+      return `${hours}h`;
     }
     return `${mins}m`;
   };
@@ -36,13 +40,16 @@ export default function BadgeDisplay({
     return null; // Maxed out at 28
   };
 
-  // Get next time milestone
+  // Get next time milestone (30 min increments up to 10 hours)
   const getNextTimeMilestone = () => {
-    const milestones = [1800, 3600, 7200, 18000, 36000];
+    const milestones = [];
+    for (let i = 1800; i <= 36000; i += 1800) {
+      milestones.push(i);
+    }
     for (const m of milestones) {
       if (totalPlankSeconds < m) return m;
     }
-    return null;
+    return null; // Maxed out at 10 hours
   };
 
   const nextStreakMilestone = getNextStreakMilestone();
@@ -63,6 +70,7 @@ export default function BadgeDisplay({
 
   // Count total completed streak badges for display
   const hasCompletedBadges = Object.values(completedStreakBadges).some(count => count > 0);
+  const hasCompletedTimeBadges = Object.keys(completedTimeBadges).length > 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "12px" : "16px" }}>
@@ -193,36 +201,104 @@ export default function BadgeDisplay({
         </div>
       </div>
 
-      {/* Time Badges (Plank only) */}
+      {/* Time Badges (Plank only) - Progressive reveal like streaks */}
       {totalPlankSeconds > 0 && (
         <div>
           <div style={{ fontSize: compact ? "12px" : "13px", fontWeight: "600", marginBottom: "8px", color: "var(--color-text-secondary)" }}>
             ⏱️ Time Milestones
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-            {[1800, 3600, 7200, 18000, 36000].map((seconds) => {
-              const earned = timeBadges.includes(seconds);
-              return (
+          
+          {/* Next Time Badge Card */}
+          {nextTimeMilestone && (
+            <div
+              style={{
+                padding: "12px",
+                backgroundColor: "#f9fafb",
+                borderRadius: "8px",
+                border: "2px solid #e5e7eb",
+                marginBottom: "12px",
+              }}
+            >
+              <div style={{ fontSize: "13px", fontWeight: "600", marginBottom: "8px", color: "#6b7280" }}>
+                Next Badge: {formatTime(nextTimeMilestone)} Total Time ⏱️
+              </div>
+              
+              {/* Progress Bar Badge */}
+              <div
+                style={{
+                  position: "relative",
+                  width: "100%",
+                  height: "40px",
+                  backgroundColor: "#e5e7eb",
+                  borderRadius: "8px",
+                  overflow: "hidden",
+                  border: "2px solid #d1d5db",
+                }}
+              >
+                {/* Filled portion */}
                 <div
-                  key={seconds}
                   style={{
-                    ...badgeStyle,
-                    opacity: earned ? 1 : 0.3,
-                    backgroundColor: earned ? "#dcfce7" : "#f3f4f6",
-                    border: earned ? "2px solid #22c55e" : "2px solid #d1d5db",
-                    color: earned ? "#14532d" : "#6b7280",
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    height: "100%",
+                    width: `${(totalPlankSeconds / nextTimeMilestone) * 100}%`,
+                    backgroundColor: "#22c55e",
+                    transition: "width 0.5s ease",
+                    borderRight: totalPlankSeconds > 0 && totalPlankSeconds < nextTimeMilestone ? "2px solid #16a34a" : "none",
+                  }}
+                />
+                
+                {/* Text overlay */}
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "16px",
+                    fontWeight: "bold",
+                    color: totalPlankSeconds >= nextTimeMilestone / 2 ? "#14532d" : "#374151",
+                    textShadow: "0 1px 2px rgba(255,255,255,0.8)",
                   }}
                 >
-                  ⏱️ {formatTime(seconds)}
+                  {formatTime(totalPlankSeconds)}/{formatTime(nextTimeMilestone)}
                 </div>
-              );
-            })}
-          </div>
-          {showProgress && nextTimeMilestone && (
-            <div style={{ marginTop: "8px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
-              Progress: {formatTime(totalPlankSeconds)}/{formatTime(nextTimeMilestone)}
-              <div style={{ width: "100%", height: "6px", backgroundColor: "#e5e7eb", borderRadius: "3px", marginTop: "4px", overflow: "hidden" }}>
-                <div style={{ width: `${(totalPlankSeconds / nextTimeMilestone) * 100}%`, height: "100%", backgroundColor: "#22c55e", transition: "width 0.3s ease" }} />
+              </div>
+            </div>
+          )}
+
+          {/* Completed Time Badges */}
+          {hasCompletedTimeBadges && (
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", color: "#6b7280" }}>
+                🏆 Earned Time Badges
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                {Object.keys(completedTimeBadges)
+                  .map(Number)
+                  .sort((a, b) => b - a)
+                  .map((seconds) => {
+                    const count = completedTimeBadges[seconds] || 0;
+                    if (count === 0) return null;
+                    return (
+                      <div
+                        key={seconds}
+                        style={{
+                          ...badgeStyle,
+                          backgroundColor: "#dcfce7",
+                          border: "2px solid #22c55e",
+                          color: "#14532d",
+                        }}
+                      >
+                        ⏱️ {formatTime(seconds)} {count > 1 ? `(x${count})` : ""}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           )}

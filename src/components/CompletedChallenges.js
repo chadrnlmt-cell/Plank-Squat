@@ -116,6 +116,20 @@ export default function CompletedChallenges({ user }) {
         });
       }
 
+      // Get highest badge for a user
+      const getHighestStreakBadge = (completedBadges) => {
+        const levels = [28, 21, 14, 7, 3];
+        for (const level of levels) {
+          if (completedBadges[level] > 0) return level;
+        }
+        return 0;
+      };
+
+      const getHighestTimeBadge = (completedBadges) => {
+        const levels = Object.keys(completedBadges).map(Number).sort((a, b) => b - a);
+        return levels.length > 0 ? levels[0] : 0;
+      };
+
       // Process participant data
       const participants = [];
       userChallengesSnapshot.forEach(docSnap => {
@@ -167,11 +181,14 @@ export default function CompletedChallenges({ user }) {
             currentStreak: badges.currentStreak || 0,
             currentStreakBadgeLevel: badges.currentStreakBadgeLevel || 0,
             completedStreakBadges: badges.completedStreakBadges || { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
+            highestStreakBadge: getHighestStreakBadge(badges.completedStreakBadges || {}),
             doubleBadgeCount: badges.doubleBadgeCount || 0,
             tripleBadgeCount: badges.tripleBadgeCount || 0,
             quadrupleBadgeCount: badges.quadrupleBadgeCount || 0,
             totalPlankSeconds: badges.totalPlankSeconds || 0,
-            timeBadges: badges.timeBadges || [],
+            currentTimeBadgeLevel: badges.currentTimeBadgeLevel || 0,
+            completedTimeBadges: badges.completedTimeBadges || {},
+            highestTimeBadge: getHighestTimeBadge(badges.completedTimeBadges || {}),
           },
         });
       });
@@ -186,6 +203,12 @@ export default function CompletedChallenges({ user }) {
       });
 
       setParticipantData(participants);
+
+      // Generate all 30-minute time milestones up to 10 hours for aggregate
+      const timeMilestones = [];
+      for (let i = 1800; i <= 36000; i += 1800) {
+        timeMilestones.push(i);
+      }
 
       // Calculate aggregate data
       const aggregate = {
@@ -204,13 +227,15 @@ export default function CompletedChallenges({ user }) {
           double: participants.reduce((sum, p) => sum + p.badges.doubleBadgeCount, 0),
           triple: participants.reduce((sum, p) => sum + p.badges.tripleBadgeCount, 0),
           quadruple: participants.reduce((sum, p) => sum + p.badges.quadrupleBadgeCount, 0),
-          time1800: participants.filter(p => p.badges.timeBadges.includes(1800)).length,
-          time3600: participants.filter(p => p.badges.timeBadges.includes(3600)).length,
-          time7200: participants.filter(p => p.badges.timeBadges.includes(7200)).length,
-          time18000: participants.filter(p => p.badges.timeBadges.includes(18000)).length,
-          time36000: participants.filter(p => p.badges.timeBadges.includes(36000)).length,
         },
       };
+
+      // Add time badge counts for each milestone
+      timeMilestones.forEach(milestone => {
+        aggregate.badges[`time${milestone}`] = participants.reduce((sum, p) => {
+          return sum + (p.badges.completedTimeBadges[milestone] || 0);
+        }, 0);
+      });
 
       setAggregateData(aggregate);
 
@@ -260,6 +285,18 @@ export default function CompletedChallenges({ user }) {
     return `${minutes}m ${secs}s`;
   };
 
+  const formatTimeShort = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      if (minutes > 0) {
+        return `${hours}h ${minutes}m`;
+      }
+      return `${hours}h`;
+    }
+    return `${minutes}m`;
+  };
+
   const formatValue = (value, type) => {
     if (type === "plank") {
       return formatTime(value);
@@ -281,6 +318,12 @@ export default function CompletedChallenges({ user }) {
         <p style={{ color: "#999" }}>No completed challenges yet.</p>
       </div>
     );
+  }
+
+  // Generate time milestone headers (30 min increments up to 10 hours)
+  const timeMilestones = [];
+  for (let i = 1800; i <= 36000; i += 1800) {
+    timeMilestones.push(i);
   }
 
   return (
@@ -409,6 +452,7 @@ export default function CompletedChallenges({ user }) {
                         <th style={{ padding: "8px", textAlign: "right", border: "1px solid #ddd", whiteSpace: "nowrap" }}>Days Done</th>
                         <th style={{ padding: "8px", textAlign: "right", border: "1px solid #ddd", whiteSpace: "nowrap" }}>Days Missed</th>
                         <th style={{ padding: "8px", textAlign: "right", border: "1px solid #ddd", whiteSpace: "nowrap" }}>Success %</th>
+                        <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>Highest Streak</th>
                         <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>3-Day</th>
                         <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>7-Day</th>
                         <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>14-Day</th>
@@ -419,11 +463,12 @@ export default function CompletedChallenges({ user }) {
                         <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>4x</th>
                         {challengeDetails.type === "plank" && (
                           <>
-                            <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>30min</th>
-                            <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>1hr</th>
-                            <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>2hr</th>
-                            <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>5hr</th>
-                            <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>10hr</th>
+                            <th style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>Highest Time</th>
+                            {timeMilestones.map(ms => (
+                              <th key={ms} style={{ padding: "8px", textAlign: "left", border: "1px solid #ddd", whiteSpace: "nowrap" }}>
+                                {formatTimeShort(ms)}
+                              </th>
+                            ))}
                           </>
                         )}
                       </tr>
@@ -448,6 +493,9 @@ export default function CompletedChallenges({ user }) {
                           <td style={{ padding: "8px", textAlign: "right", border: "1px solid #ddd" }}>{participant.daysCompleted}</td>
                           <td style={{ padding: "8px", textAlign: "right", border: "1px solid #ddd" }}>{participant.missedDays}</td>
                           <td style={{ padding: "8px", textAlign: "right", border: "1px solid #ddd" }}>{participant.successRate.toFixed(1)}%</td>
+                          <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                            {participant.badges.highestStreakBadge > 0 ? `${participant.badges.highestStreakBadge}d` : "-"}
+                          </td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>{participant.badges.completedStreakBadges[3] || 0}</td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>{participant.badges.completedStreakBadges[7] || 0}</td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>{participant.badges.completedStreakBadges[14] || 0}</td>
@@ -458,11 +506,14 @@ export default function CompletedChallenges({ user }) {
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>{participant.badges.quadrupleBadgeCount}</td>
                           {challengeDetails.type === "plank" && (
                             <>
-                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>{participant.badges.timeBadges.includes(1800) ? "✓" : ""}</td>
-                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>{participant.badges.timeBadges.includes(3600) ? "✓" : ""}</td>
-                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>{participant.badges.timeBadges.includes(7200) ? "✓" : ""}</td>
-                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>{participant.badges.timeBadges.includes(18000) ? "✓" : ""}</td>
-                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>{participant.badges.timeBadges.includes(36000) ? "✓" : ""}</td>
+                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>
+                                {participant.badges.highestTimeBadge > 0 ? formatTimeShort(participant.badges.highestTimeBadge) : "-"}
+                              </td>
+                              {timeMilestones.map(ms => (
+                                <td key={ms} style={{ padding: "8px", border: "1px solid #ddd" }}>
+                                  {participant.badges.completedTimeBadges[ms] || 0}
+                                </td>
+                              ))}
                             </>
                           )}
                         </tr>
@@ -482,6 +533,7 @@ export default function CompletedChallenges({ user }) {
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>-</td>
                           <td style={{ padding: "8px", textAlign: "right", border: "1px solid #ddd" }}>{aggregateData.totalMissedDays}</td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>-</td>
+                          <td style={{ padding: "8px", border: "1px solid #ddd" }}>-</td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>{aggregateData.badges.streak3 || 0}</td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>{aggregateData.badges.streak7 || 0}</td>
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>{aggregateData.badges.streak14 || 0}</td>
@@ -492,11 +544,12 @@ export default function CompletedChallenges({ user }) {
                           <td style={{ padding: "8px", border: "1px solid #ddd" }}>{aggregateData.badges.quadruple}</td>
                           {challengeDetails.type === "plank" && (
                             <>
-                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>{aggregateData.badges.time1800}</td>
-                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>{aggregateData.badges.time3600}</td>
-                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>{aggregateData.badges.time7200}</td>
-                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>{aggregateData.badges.time18000}</td>
-                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>{aggregateData.badges.time36000}</td>
+                              <td style={{ padding: "8px", border: "1px solid #ddd" }}>-</td>
+                              {timeMilestones.map(ms => (
+                                <td key={ms} style={{ padding: "8px", border: "1px solid #ddd" }}>
+                                  {aggregateData.badges[`time${ms}`] || 0}
+                                </td>
+                              ))}
                             </>
                           )}
                         </tr>

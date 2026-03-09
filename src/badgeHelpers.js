@@ -24,7 +24,8 @@ function getChallengeBadgeData(userStatsData, challengeId) {
       tripleBadgeCount: 0,
       quadrupleBadgeCount: 0,
       totalPlankSeconds: 0,
-      timeBadges: [],
+      currentTimeBadgeLevel: 0, // Highest time badge earned (in seconds)
+      completedTimeBadges: {}, // Count of each time badge earned { 1800: 1, 3600: 1, ... }
     };
   }
 
@@ -37,7 +38,8 @@ function getChallengeBadgeData(userStatsData, challengeId) {
       tripleBadgeCount: 0,
       quadrupleBadgeCount: 0,
       totalPlankSeconds: 0,
-      timeBadges: [],
+      currentTimeBadgeLevel: 0,
+      completedTimeBadges: {},
     };
   }
 
@@ -50,7 +52,8 @@ function getChallengeBadgeData(userStatsData, challengeId) {
     tripleBadgeCount: existing.tripleBadgeCount || 0,
     quadrupleBadgeCount: existing.quadrupleBadgeCount || 0,
     totalPlankSeconds: existing.totalPlankSeconds || 0,
-    timeBadges: existing.timeBadges || [],
+    currentTimeBadgeLevel: existing.currentTimeBadgeLevel || 0,
+    completedTimeBadges: existing.completedTimeBadges || {},
   };
 }
 
@@ -149,20 +152,36 @@ function calculateMultiplierBadges(actualValue, targetValue, currentCounts) {
 }
 
 /**
- * Calculate time badges (plank only)
- * Every 30 minutes: 1800s, 3600s, 7200s, 18000s, 36000s
+ * Calculate time badges (plank only) - 30 minute increments
+ * Similar to streak badges: progressive reveal, highest badge only
+ * Every 30 minutes: 1800s (30m), 3600s (1h), 5400s (1h30m), 7200s (2h), 9000s (2h30m), 10800s (3h)...
+ * Up to 36000s (10h)
  */
-function calculateTimeBadges(totalSeconds, existingBadges) {
-  const earned = [...existingBadges];
-  const milestones = [1800, 3600, 7200, 18000, 36000];
+function calculateTimeBadges(totalSeconds, currentBadgeLevel, existingCompletedBadges) {
+  // Generate milestones every 30 minutes up to 10 hours
+  const milestones = [];
+  for (let i = 1800; i <= 36000; i += 1800) {
+    milestones.push(i);
+  }
 
+  let newBadgeLevel = currentBadgeLevel;
+  const completedBadges = { ...existingCompletedBadges };
+  let newlyEarnedBadge = null;
+
+  // Find the highest milestone reached
   for (const milestone of milestones) {
-    if (totalSeconds >= milestone && !earned.includes(milestone)) {
-      earned.push(milestone);
+    if (totalSeconds >= milestone && milestone > currentBadgeLevel) {
+      // Award the new badge and retire the old one
+      if (currentBadgeLevel > 0) {
+        // Move previous badge to completed
+        completedBadges[currentBadgeLevel] = (completedBadges[currentBadgeLevel] || 0) + 1;
+      }
+      newBadgeLevel = milestone;
+      newlyEarnedBadge = milestone;
     }
   }
 
-  return earned.sort((a, b) => a - b);
+  return { newBadgeLevel, completedBadges, newlyEarnedBadge };
 }
 
 /**
@@ -231,12 +250,20 @@ export async function updateBadgesOnCompletion({
 
     // Calculate time badges (plank only)
     let newTotalPlankSeconds = currentBadgeData.totalPlankSeconds || 0;
-    let newTimeBadges = currentBadgeData.timeBadges || [];
+    let newTimeBadgeLevel = currentBadgeData.currentTimeBadgeLevel || 0;
+    let newCompletedTimeBadges = currentBadgeData.completedTimeBadges || {};
+    let newlyEarnedTimeBadge = null;
 
     if (movementType === "plank") {
       newTotalPlankSeconds += actualValue;
-      const oldTimeBadges = currentBadgeData.timeBadges || [];
-      newTimeBadges = calculateTimeBadges(newTotalPlankSeconds, oldTimeBadges);
+      const timeBadgeResult = calculateTimeBadges(
+        newTotalPlankSeconds,
+        currentBadgeData.currentTimeBadgeLevel || 0,
+        currentBadgeData.completedTimeBadges || {}
+      );
+      newTimeBadgeLevel = timeBadgeResult.newBadgeLevel;
+      newCompletedTimeBadges = timeBadgeResult.completedBadges;
+      newlyEarnedTimeBadge = timeBadgeResult.newlyEarnedBadge;
     }
 
     // Determine newly earned badges for celebration
@@ -273,13 +300,8 @@ export async function updateBadgesOnCompletion({
     }
 
     // New time badges
-    if (movementType === "plank") {
-      const oldTimeBadges = currentBadgeData.timeBadges || [];
-      for (const badge of newTimeBadges) {
-        if (!oldTimeBadges.includes(badge)) {
-          newBadges.push({ type: "time", value: badge });
-        }
-      }
+    if (movementType === "plank" && newlyEarnedTimeBadge) {
+      newBadges.push({ type: "time", value: newlyEarnedTimeBadge });
     }
 
     // Update Firestore
@@ -291,7 +313,8 @@ export async function updateBadgesOnCompletion({
       tripleBadgeCount: newMultipliers.tripleBadgeCount,
       quadrupleBadgeCount: newMultipliers.quadrupleBadgeCount,
       totalPlankSeconds: newTotalPlankSeconds,
-      timeBadges: newTimeBadges,
+      currentTimeBadgeLevel: newTimeBadgeLevel,
+      completedTimeBadges: newCompletedTimeBadges,
     };
 
     await updateDoc(userStatsRef, {
@@ -303,6 +326,7 @@ export async function updateBadgesOnCompletion({
       challengeId,
       newStreak,
       currentBadgeLevel: newBadgeLevel,
+      newTimeBadgeLevel,
       newBadges: newBadges.length,
     });
 
@@ -325,7 +349,7 @@ export async function getAllUserBadges(userId) {
       return {
         allStreakBadges: { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
         allMultipliers: { double: 0, triple: 0, quadruple: 0 },
-        allTimeBadges: [],
+        allTimeBadges: {},
         byChallengeId: {},
       };
     }
@@ -338,7 +362,7 @@ export async function getAllUserBadges(userId) {
     let totalDouble = 0;
     let totalTriple = 0;
     let totalQuadruple = 0;
-    const allTimeBadgesSet = new Set();
+    const allTimeBadges = {};
 
     for (const challengeId in challenges) {
       const badgeData = challenges[challengeId];
@@ -356,8 +380,10 @@ export async function getAllUserBadges(userId) {
       totalQuadruple += badgeData.quadrupleBadgeCount || 0;
 
       // Collect time badges
-      if (badgeData.timeBadges) {
-        badgeData.timeBadges.forEach((b) => allTimeBadgesSet.add(b));
+      if (badgeData.completedTimeBadges) {
+        for (const level in badgeData.completedTimeBadges) {
+          allTimeBadges[level] = (allTimeBadges[level] || 0) + badgeData.completedTimeBadges[level];
+        }
       }
     }
 
@@ -368,7 +394,7 @@ export async function getAllUserBadges(userId) {
         triple: totalTriple,
         quadruple: totalQuadruple,
       },
-      allTimeBadges: Array.from(allTimeBadgesSet).sort((a, b) => a - b),
+      allTimeBadges,
       byChallengeId: challenges,
     };
   } catch (error) {
@@ -376,7 +402,7 @@ export async function getAllUserBadges(userId) {
     return {
       allStreakBadges: { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
       allMultipliers: { double: 0, triple: 0, quadruple: 0 },
-      allTimeBadges: [],
+      allTimeBadges: {},
       byChallengeId: {},
     };
   }
