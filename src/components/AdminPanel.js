@@ -14,7 +14,9 @@ import {
   writeBatch,
   Timestamp,
 } from "firebase/firestore";
+import { getPhoenixDate } from "../utils";
 import TeamManagement from "./TeamManagement";
+import CompletedChallenges from "./CompletedChallenges";
 
 export default function AdminPanel({ user }) {
   const [activeAdminTab, setActiveAdminTab] = useState("challenges");
@@ -367,6 +369,99 @@ export default function AdminPanel({ user }) {
     }
   };
 
+  // NEW: Force End Challenge
+  const handleForceEnd = (challenge) => {
+    setConfirmAction({
+      type: "forceEnd",
+      challengeId: challenge.id,
+      challenge: challenge,
+      message: `Force end ${challenge.name}? This will immediately complete the challenge for all ${challenge.userCount} users, mark remaining days as missed, set status to completed, and deactivate the challenge. This cannot be undone!`,
+    });
+    setResetConfirmText("");
+  };
+
+  const confirmForceEnd = async (challengeId, challenge) => {
+    if (resetConfirmText !== "END") {
+      alert('Please type "END" to confirm');
+      return;
+    }
+
+    try {
+      // Get all userChallenges for this challenge
+      const userChallengesQuery = query(
+        collection(db, "userChallenges"),
+        where("challengeId", "==", challengeId)
+      );
+      const userChallengesSnapshot = await getDocs(userChallengesQuery);
+
+      const nowTs = Timestamp.fromDate(getPhoenixDate());
+      const numberOfDays = challenge.numberOfDays;
+
+      // Process each user
+      for (const docSnap of userChallengesSnapshot.docs) {
+        const userChallengeData = docSnap.data();
+        const lastCompletedDay = userChallengeData.lastCompletedDay || 0;
+        const userId = userChallengeData.userId;
+        const displayName = userChallengeData.displayName || null;
+
+        // Create missed attempts for all remaining days
+        const attemptsRef = collection(db, "attempts");
+        for (let d = lastCompletedDay + 1; d <= numberOfDays; d++) {
+          // Check if missed attempt already exists
+          const existingMissedQuery = query(
+            attemptsRef,
+            where("userId", "==", userId),
+            where("challengeId", "==", challengeId),
+            where("day", "==", d),
+            where("missed", "==", true)
+          );
+          const existingSnap = await getDocs(existingMissedQuery);
+
+          if (existingSnap.empty) {
+            await addDoc(attemptsRef, {
+              userId,
+              displayName,
+              userChallengeId: docSnap.id,
+              challengeId,
+              day: d,
+              targetValue: null,
+              actualValue: 0,
+              success: false,
+              missed: true,
+              timestamp: nowTs,
+            });
+          }
+        }
+
+        // Calculate total missed days
+        const missedCount = numberOfDays - lastCompletedDay;
+
+        // Update userChallenge to completed
+        await updateDoc(doc(db, "userChallenges", docSnap.id), {
+          status: "completed",
+          currentDay: numberOfDays + 1,
+          missedDaysCount: (userChallengeData.missedDaysCount || 0) + missedCount,
+        });
+      }
+
+      // Archive leaderboard
+      await archiveLeaderboardBeforeDeactivate(challenge);
+
+      // Deactivate the challenge
+      await updateDoc(doc(db, "challenges", challengeId), {
+        isActive: false,
+      });
+
+      setConfirmAction(null);
+      setResetConfirmText("");
+      loadChallenges();
+      alert(`Challenge "${challenge.name}" has been force-ended successfully.`);
+    } catch (error) {
+      console.error("Error force-ending challenge:", error);
+      alert("Error force-ending challenge");
+    }
+  };
+
   const handleDelete = (challenge) => {
     setConfirmAction({
       type: "delete",
@@ -620,10 +715,31 @@ export default function AdminPanel({ user }) {
         >
           Teams
         </button>
+        <button
+          onClick={() => setActiveAdminTab("completed")}
+          style={{
+            padding: "12px 24px",
+            fontSize: "16px",
+            backgroundColor:
+              activeAdminTab === "completed" ? "#4CAF50" : "transparent",
+            color: activeAdminTab === "completed" ? "white" : "#666",
+            border: "none",
+            borderBottom:
+              activeAdminTab === "completed"
+                ? "3px solid #4CAF50"
+                : "3px solid transparent",
+            cursor: "pointer",
+            fontWeight: activeAdminTab === "completed" ? "bold" : "normal",
+          }}
+        >
+          Completed Challenges
+        </button>
       </div>
 
       {activeAdminTab === "teams" ? (
         <TeamManagement user={user} />
+      ) : activeAdminTab === "completed" ? (
+        <CompletedChallenges user={user} />
       ) : (
         <>
           <button
@@ -1240,6 +1356,8 @@ export default function AdminPanel({ user }) {
                 <h2>
                   {confirmAction.type === "reset"
                     ? "Reset Challenge"
+                    : confirmAction.type === "forceEnd"
+                    ? "Force End Challenge"
                     : "Confirm Action"}
                 </h2>
                 <p
@@ -1252,7 +1370,7 @@ export default function AdminPanel({ user }) {
                   {confirmAction.message}
                 </p>
 
-                {confirmAction.type === "reset" && (
+                {(confirmAction.type === "reset" || confirmAction.type === "forceEnd") && (
                   <div style={{ marginBottom: "20px" }}>
                     <label
                       style={{
@@ -1261,13 +1379,13 @@ export default function AdminPanel({ user }) {
                         marginBottom: "8px",
                       }}
                     >
-                      Type RESET to confirm
+                      Type {confirmAction.type === "reset" ? "RESET" : "END"} to confirm
                     </label>
                     <input
                       type="text"
                       value={resetConfirmText}
                       onChange={(e) => setResetConfirmText(e.target.value)}
-                      placeholder="Type RESET"
+                      placeholder={`Type ${confirmAction.type === "reset" ? "RESET" : "END"}`}
                       style={{
                         width: "100%",
                         padding: "10px",
@@ -1290,10 +1408,13 @@ export default function AdminPanel({ user }) {
                         confirmDelete(confirmAction.challengeId);
                       } else if (confirmAction.type === "reset") {
                         confirmReset(confirmAction.challengeId);
+                      } else if (confirmAction.type === "forceEnd") {
+                        confirmForceEnd(confirmAction.challengeId, confirmAction.challenge);
                       }
                     }}
                     disabled={
-                      confirmAction.type === "reset" && resetConfirmText !== "RESET"
+                      (confirmAction.type === "reset" && resetConfirmText !== "RESET") ||
+                      (confirmAction.type === "forceEnd" && resetConfirmText !== "END")
                     }
                     style={{
                       flex: 1,
@@ -1301,20 +1422,21 @@ export default function AdminPanel({ user }) {
                       fontSize: "16px",
                       backgroundColor:
                         confirmAction.type === "delete" ||
-                        confirmAction.type === "reset"
+                        confirmAction.type === "reset" ||
+                        confirmAction.type === "forceEnd"
                           ? "#d32f2f"
                           : "#4CAF50",
                       color: "white",
                       border: "none",
                       borderRadius: "5px",
                       cursor:
-                        confirmAction.type === "reset" &&
-                        resetConfirmText !== "RESET"
+                        (confirmAction.type === "reset" && resetConfirmText !== "RESET") ||
+                        (confirmAction.type === "forceEnd" && resetConfirmText !== "END")
                           ? "not-allowed"
                           : "pointer",
                       opacity:
-                        confirmAction.type === "reset" &&
-                        resetConfirmText !== "RESET"
+                        (confirmAction.type === "reset" && resetConfirmText !== "RESET") ||
+                        (confirmAction.type === "forceEnd" && resetConfirmText !== "END")
                           ? 0.5
                           : 1,
                     }}
@@ -1325,6 +1447,8 @@ export default function AdminPanel({ user }) {
                       ? "Deactivate"
                       : confirmAction.type === "delete"
                       ? "Delete"
+                      : confirmAction.type === "forceEnd"
+                      ? "Force End"
                       : "Confirm"}
                   </button>
                   <button
@@ -1481,6 +1605,20 @@ export default function AdminPanel({ user }) {
                               }}
                             >
                               Deactivate
+                            </button>
+                            <button
+                              onClick={() => handleForceEnd(challenge)}
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: "14px",
+                                backgroundColor: "#9C27B0",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Force End
                             </button>
                             <button
                               onClick={() => handleReset(challenge)}
