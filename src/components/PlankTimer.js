@@ -50,7 +50,7 @@ const RECOVERY_TIPS = [
 ];
 
 // Emoji pool to randomize alongside tips
-const RECOVERY_EMOJIS = ["💪", "🔥", "😤", "🧘", "✊", "😮\u200d💨"];
+const RECOVERY_EMOJIS = ["💪", "🔥", "😤", "🧘", "✊", "😮‍💨"];
 
 const HIGH_CELEBRATIONS = [
   "Crushing it! 💪",
@@ -859,7 +859,7 @@ export default function PlankTimer({
             {stage === "paused" && (
               <div
                 style={{
-                  marginBottom: "24px",
+                  marginBottom: "20px",
                   textAlign: "center",
                 }}
               >
@@ -875,12 +875,13 @@ export default function PlankTimer({
                 >
                   {recoveryEmoji} {recoveryTip}
                 </div>
-                {/* Recovery remaining — turns red under 10s */}
+                {/* Recovery remaining — 80px dominant, turns red under 10s */}
                 <div
                   style={{
-                    fontSize: "18px",
-                    fontWeight: "600",
+                    fontSize: "80px",
+                    fontWeight: "bold",
                     color: recoveryRemaining <= 10 ? "#ef4444" : "var(--color-text-secondary)",
+                    lineHeight: "1",
                     transition: "color 0.3s ease",
                   }}
                 >
@@ -889,18 +890,45 @@ export default function PlankTimer({
               </div>
             )}
 
-            {/* Big Timer */}
-            <div
-              style={{
-                fontSize: "120px",
-                fontWeight: "bold",
-                color: getTimerColor(),
-                marginBottom: "40px",
-                transition: "color 0.3s ease",
-              }}
-            >
-              {formatTime(stage === "paused" ? pausedElapsed : elapsed)}
-            </div>
+            {/* Plank Timer — 120px active, 48px when paused with stacked label */}
+            {stage === "paused" ? (
+              <div style={{ marginBottom: "32px" }}>
+                <div
+                  style={{
+                    fontSize: "16px",
+                    fontWeight: "600",
+                    color: "var(--color-text-secondary)",
+                    marginBottom: "4px",
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  🏋️ Plank time
+                </div>
+                <div
+                  style={{
+                    fontSize: "48px",
+                    fontWeight: "bold",
+                    color: getTimerColor(),
+                    transition: "color 0.3s ease",
+                  }}
+                >
+                  {formatTime(pausedElapsed)}
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: "120px",
+                  fontWeight: "bold",
+                  color: getTimerColor(),
+                  marginBottom: "40px",
+                  transition: "color 0.3s ease",
+                }}
+              >
+                {formatTime(elapsed)}
+              </div>
+            )}
 
             <div
               style={{
