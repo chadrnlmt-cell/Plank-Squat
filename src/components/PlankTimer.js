@@ -49,6 +49,9 @@ const RECOVERY_TIPS = [
   "Stay strong, you've got this",
 ];
 
+// Emoji pool to randomize alongside tips
+const RECOVERY_EMOJIS = ["💪", "🔥", "😤", "🧘", "✊", "😮\u200d💨"];
+
 const HIGH_CELEBRATIONS = [
   "Crushing it! 💪",
   "You're on fire! 🔥",
@@ -120,6 +123,7 @@ export default function PlankTimer({
   const [hasPaused, setHasPaused] = useState(false);
   const [pausedElapsed, setPausedElapsed] = useState(0);
   const [recoveryTip, setRecoveryTip] = useState("");
+  const [recoveryEmoji, setRecoveryEmoji] = useState("💪");
 
   // Anti-cheating states
   const [stillGoingCountdown, setStillGoingCountdown] = useState(20);
@@ -402,7 +406,10 @@ export default function PlankTimer({
       setCurrentRecoveryTime(0);
       const randomTip =
         RECOVERY_TIPS[Math.floor(Math.random() * RECOVERY_TIPS.length)];
+      const randomEmoji =
+        RECOVERY_EMOJIS[Math.floor(Math.random() * RECOVERY_EMOJIS.length)];
       setRecoveryTip(randomTip);
+      setRecoveryEmoji(randomEmoji);
       setStage("paused");
     }
   };
@@ -837,35 +844,52 @@ export default function PlankTimer({
               transition: "margin-top 0.4s ease",
             }}
           >
-            {stage === "paused" && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "80px",
-                  left: "20px",
-                  right: "20px",
-                  fontSize: "90px",
-                  fontWeight: "bold",
-                  color: "#f97316",
-                  textAlign: "center",
-                  lineHeight: "1.1",
-                  textShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                }}
-              >
-                {recoveryTip}
-              </div>
-            )}
-
+            {/* Subtitle */}
             <div
               style={{
                 fontSize: "20px",
                 color: "var(--color-text-secondary)",
-                marginBottom: "40px",
+                marginBottom: "20px",
               }}
             >
               Day {day} challenge Goal: {targetSeconds} seconds
             </div>
 
+            {/* PAUSED: tip + recovery — consolidated above the timer */}
+            {stage === "paused" && (
+              <div
+                style={{
+                  marginBottom: "24px",
+                  textAlign: "center",
+                }}
+              >
+                {/* Recovery tip with randomized emoji */}
+                <div
+                  style={{
+                    fontSize: "34px",
+                    fontWeight: "bold",
+                    color: "#f97316",
+                    lineHeight: "1.2",
+                    marginBottom: "12px",
+                  }}
+                >
+                  {recoveryEmoji} {recoveryTip}
+                </div>
+                {/* Recovery remaining — turns red under 10s */}
+                <div
+                  style={{
+                    fontSize: "18px",
+                    fontWeight: "600",
+                    color: recoveryRemaining <= 10 ? "#ef4444" : "var(--color-text-secondary)",
+                    transition: "color 0.3s ease",
+                  }}
+                >
+                  ⏱️ {Math.max(0, recoveryRemaining)}s remaining
+                </div>
+              </div>
+            )}
+
+            {/* Big Timer */}
             <div
               style={{
                 fontSize: "120px",
@@ -877,28 +901,6 @@ export default function PlankTimer({
             >
               {formatTime(stage === "paused" ? pausedElapsed : elapsed)}
             </div>
-
-            {stage === "paused" && (
-              <div
-                style={{
-                  fontSize: "24px",
-                  color: "var(--color-warning)",
-                  marginBottom: "30px",
-                  textAlign: "center",
-                }}
-              >
-                <div style={{ fontWeight: "bold" }}>⏸️ PAUSED</div>
-                <div
-                  style={{
-                    fontSize: "18px",
-                    marginTop: "12px",
-                    color: "var(--color-text-secondary)",
-                  }}
-                >
-                  Recovery: {formatTime(Math.max(0, recoveryRemaining))}
-                </div>
-              </div>
-            )}
 
             <div
               style={{
