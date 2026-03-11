@@ -1,20 +1,7 @@
-// src/components/TabNavigation.js
 import React from "react";
 
 export default function TabNavigation({ activeTab, onTabChange, user }) {
-  const ADMIN_EMAIL = "chadrnlmt@gmail.com";
-  const isAdmin = user?.email === ADMIN_EMAIL;
-  console.log("ADMIN CHECK", user?.email, ADMIN_EMAIL, isAdmin);
-
-  const tabs = [
-    { id: "available", label: "Available", icon: "🏆" },
-    { id: "active", label: "Active", icon: "💪" },
-    { id: "leaderboards", label: "Leaders", icon: "📊" },
-    { id: "profile", label: "Profile", icon: "👤" },
-  ];
-
-  // Always show admin tab (access control is in AdminPanel.js)
-  tabs.push({ id: "admin", label: "Admin", icon: "⚙️" });
+  if (!user) return null;
 
   return (
     <nav
@@ -23,41 +10,86 @@ export default function TabNavigation({ activeTab, onTabChange, user }) {
         bottom: 0,
         left: 0,
         right: 0,
-        background: "var(--color-surface)",
-        borderTop: "1px solid var(--color-border)",
+        borderTop: "1px solid #ddd",
+        backgroundColor: "white",
         display: "flex",
         justifyContent: "space-around",
-        padding: "8px 0",
+        padding: "10px 0",
         zIndex: 100,
       }}
     >
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => onTabChange(tab.id)}
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            padding: "8px",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color:
-              activeTab === tab.id
-                ? "var(--color-primary)"
-                : "var(--color-text-secondary)",
-            fontWeight: activeTab === tab.id ? "600" : "400",
-            transition: "color 0.2s",
-          }}
-        >
-          <span style={{ fontSize: "20px", marginBottom: "4px" }}>
-            {tab.icon}
-          </span>
-          <span style={{ fontSize: "12px" }}>{tab.label}</span>
-        </button>
-      ))}
+      <button
+        onClick={() => onTabChange("available")}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: activeTab === "available" ? "#1976d2" : "#666",
+          fontWeight: activeTab === "available" ? "bold" : "normal",
+        }}
+      >
+        Available
+      </button>
+      <button
+        onClick={() => onTabChange("active")}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: activeTab === "active" ? "#1976d2" : "#666",
+          fontWeight: activeTab === "active" ? "bold" : "normal",
+        }}
+      >
+        Active
+      </button>
+      <button
+        onClick={() => onTabChange("leaderboards")}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: activeTab === "leaderboards" ? "#1976d2" : "#666",
+          fontWeight: activeTab === "leaderboards" ? "bold" : "normal",
+        }}
+      >
+        Leaderboards
+      </button>
+      <button
+        onClick={() => onTabChange("profile")}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: activeTab === "profile" ? "#1976d2" : "#666",
+          fontWeight: activeTab === "profile" ? "bold" : "normal",
+        }}
+      >
+        Profile
+      </button>
+      <button
+        onClick={() => onTabChange("challengeGuide")}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: activeTab === "challengeGuide" ? "#1976d2" : "#666",
+          fontWeight: activeTab === "challengeGuide" ? "bold" : "normal",
+        }}
+      >
+        Challenge Guide
+      </button>
+      <button
+        onClick={() => onTabChange("admin")}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: activeTab === "admin" ? "#1976d2" : "#666",
+          fontWeight: activeTab === "admin" ? "bold" : "normal",
+        }}
+      >
+        Admin
+      </button>
     </nav>
   );
 }
