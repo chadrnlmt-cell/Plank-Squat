@@ -52,10 +52,6 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
           challengeDetails.type
         );
 
-        // After calculation, we need to reload the userChallenge data
-        // For now, we'll just set a flag that it's been calculated
-        // The parent component should handle reloading
-        // But we'll force a re-render by setting local state
         setLocalRank(userChallenge.finalRank || "?");
         setLocalTotalParticipants(userChallenge.totalParticipants || "?");
       } catch (error) {
@@ -130,8 +126,12 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
             {isPlank ? formatSeconds(bestPerformance) : `${bestPerformance} reps`}
           </li>
           <li style={{ marginBottom: "5px" }}>
-            <strong>Average:</strong>{" "}
-            {isPlank ? formatSeconds(averagePerformance) : `${averagePerformance} reps`}
+            <strong>Challenge avg:</strong>{" "}
+            {isPlank
+              ? formatSeconds(averagePerformance)
+              : averagePerformance > 0
+              ? `${averagePerformance} reps`
+              : "—"}
           </li>
           <li style={{ marginBottom: "5px" }}>
             <strong>Days Completed:</strong> {lastCompletedDay} of {numberOfDays}

@@ -29,8 +29,10 @@ export default function Profile({ user, completedChallenges = [] }) {
     challengesCompleted: 0,
     totalPlankSeconds: 0,
     bestPlankSeconds: 0,
+    plankSuccessCount: 0,
     totalSquats: 0,
     bestSquats: 0,
+    squatSuccessCount: 0,
   });
 
   // Badge state
@@ -92,15 +94,19 @@ export default function Profile({ user, completedChallenges = [] }) {
 
         let totalPlankSeconds = 0;
         let bestPlankSeconds = 0;
+        let plankSuccessCount = 0;
         let totalSquats = 0;
         let bestSquats = 0;
+        let squatSuccessCount = 0;
 
         if (userStatsSnap.exists()) {
           const data = userStatsSnap.data();
           totalPlankSeconds = data.totalPlankSeconds || 0;
           bestPlankSeconds = data.bestPlankSeconds || 0;
+          plankSuccessCount = data.plankSuccessCount || 0;
           totalSquats = data.totalSquats || 0;
           bestSquats = data.bestSquats || 0;
+          squatSuccessCount = data.squatSuccessCount || 0;
         }
 
         // 2) challengesCompleted from userChallenges
@@ -117,8 +123,10 @@ export default function Profile({ user, completedChallenges = [] }) {
           challengesCompleted,
           totalPlankSeconds,
           bestPlankSeconds,
+          plankSuccessCount,
           totalSquats,
           bestSquats,
+          squatSuccessCount,
         });
       } catch (err) {
         console.error("Error loading profile stats:", err);
@@ -227,6 +235,41 @@ export default function Profile({ user, completedChallenges = [] }) {
     return longest;
   };
 
+  // Computed averages — only shown when successCount > 0
+  const allTimePlankAvg =
+    stats.plankSuccessCount > 0
+      ? Math.round(stats.totalPlankSeconds / stats.plankSuccessCount)
+      : null;
+
+  const allTimeSquatAvg =
+    stats.squatSuccessCount > 0
+      ? Math.round(stats.totalSquats / stats.squatSuccessCount)
+      : null;
+
+  // Section divider style
+  const sectionDividerStyle = {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    margin: "12px 0 8px 0",
+  };
+
+  const sectionLabelStyle = {
+    fontSize: "13px",
+    fontWeight: "700",
+    color: "var(--color-text)",
+    whiteSpace: "nowrap",
+  };
+
+  const sectionLineStyle = {
+    flex: 1,
+    height: "1px",
+    backgroundColor: "#e0e0e0",
+  };
+
+  const hasPlankData = stats.totalPlankSeconds > 0 || stats.bestPlankSeconds > 0;
+  const hasSquatData = stats.totalSquats > 0 || stats.bestSquats > 0;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
       {/* Profile Card */}
@@ -299,7 +342,7 @@ export default function Profile({ user, completedChallenges = [] }) {
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: "8px",
+                gap: "6px",
                 fontSize: "14px",
               }}
             >
@@ -307,20 +350,58 @@ export default function Profile({ user, completedChallenges = [] }) {
                 <strong>Challenges completed:</strong>{" "}
                 {stats.challengesCompleted}
               </div>
-              <div>
-                <strong>Total plank time:</strong>{" "}
-                {formatSeconds(stats.totalPlankSeconds)}
-              </div>
-              <div>
-                <strong>Best plank:</strong>{" "}
-                {formatSeconds(stats.bestPlankSeconds)}
-              </div>
-              <div>
-                <strong>Total squats:</strong> {stats.totalSquats}
-              </div>
-              <div>
-                <strong>Best squats:</strong> {stats.bestSquats}
-              </div>
+
+              {/* ── Plank Section ── */}
+              {hasPlankData && (
+                <>
+                  <div style={sectionDividerStyle}>
+                    <span style={sectionLabelStyle}>🏋️ Plank</span>
+                    <div style={sectionLineStyle} />
+                  </div>
+                  <div>
+                    <strong>Total plank time:</strong>{" "}
+                    {formatSeconds(stats.totalPlankSeconds)}
+                  </div>
+                  <div>
+                    <strong>Personal Best plank:</strong>{" "}
+                    {formatSeconds(stats.bestPlankSeconds)}
+                  </div>
+                  {allTimePlankAvg !== null && (
+                    <div>
+                      <strong>All-time plank avg:</strong>{" "}
+                      {formatSeconds(allTimePlankAvg)}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ── Squats Section ── */}
+              {hasSquatData && (
+                <>
+                  <div style={sectionDividerStyle}>
+                    <span style={sectionLabelStyle}>🦵 Squats</span>
+                    <div style={sectionLineStyle} />
+                  </div>
+                  <div>
+                    <strong>Total squats:</strong> {stats.totalSquats} reps
+                  </div>
+                  <div>
+                    <strong>Personal Best squats:</strong> {stats.bestSquats} reps
+                  </div>
+                  {allTimeSquatAvg !== null && (
+                    <div>
+                      <strong>All-time squat avg:</strong> {allTimeSquatAvg} reps
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Fallback if no activity at all */}
+              {!hasPlankData && !hasSquatData && (
+                <div style={{ color: "var(--color-text-secondary)", marginTop: "4px" }}>
+                  Complete a challenge day to see your stats here!
+                </div>
+              )}
             </div>
           )}
         </div>

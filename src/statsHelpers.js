@@ -39,6 +39,8 @@ async function ensureUserStats(normUser) {
       totalSquats: 0,
       bestPlankSeconds: 0,
       bestSquats: 0,
+      plankSuccessCount: 0,
+      squatSuccessCount: 0,
       updatedAt: serverTimestamp(),
     };
     await setDoc(ref, initialData);
@@ -64,7 +66,7 @@ async function ensureChallengeUserStats(normUser, challengeId, movementType, tea
       userId: normUser.uid,
       displayName: normUser.displayName,
       movementType, // "plank" or "squat"
-      teamId: teamId || null, // NEW: cache teamId for optimized leaderboard reads
+      teamId: teamId || null,
       totalSeconds: 0,
       totalReps: 0,
       bestSeconds: 0,
@@ -94,7 +96,7 @@ export async function updateSquatStatsOnSuccess({
   challengeId,
   actualReps,
   overrideDisplayName,
-  teamId = null, // NEW: optional teamId for caching
+  teamId = null,
 }) {
   if (!challengeId || typeof actualReps !== "number") {
     console.warn("updateSquatStatsOnSuccess skipped:", {
@@ -121,10 +123,12 @@ export async function updateSquatStatsOnSuccess({
 
   const newTotalSquats = (userStats.totalSquats || 0) + actualReps;
   const newBestSquats = Math.max(userStats.bestSquats || 0, actualReps);
+  const newSquatSuccessCount = (userStats.squatSuccessCount || 0) + 1;
 
   await updateDoc(userStatsRef, {
     totalSquats: newTotalSquats,
     bestSquats: newBestSquats,
+    squatSuccessCount: newSquatSuccessCount,
     displayName: normUser.displayName || userStats.displayName || "",
     photoURL: normUser.photoURL || userStats.photoURL || null,
     updatedAt: serverTimestamp(),
@@ -151,7 +155,6 @@ export async function updateSquatStatsOnSuccess({
     newFirstAchievedAt = serverTimestamp();
   }
 
-  // NEW: Update teamId if provided (for existing docs)
   const updates = {
     totalReps: newTotalReps,
     bestReps: newBestReps,
@@ -169,8 +172,9 @@ export async function updateSquatStatsOnSuccess({
   console.log("Updated squat challengeUserStats:", {
     challengeId,
     userId: normUser.uid,
-    newTotalReps,
-    newBestReps,
+    newTotalSquats,
+    newBestSquats,
+    newSquatSuccessCount,
     teamId,
   });
 }
@@ -183,7 +187,7 @@ export async function updatePlankStatsOnSuccess({
   challengeId,
   actualSeconds,
   overrideDisplayName,
-  teamId = null, // NEW: optional teamId for caching
+  teamId = null,
 }) {
   const normUser = normalizeUser(user, overrideDisplayName);
   if (!normUser || !challengeId || typeof actualSeconds !== "number") {
@@ -214,10 +218,12 @@ export async function updatePlankStatsOnSuccess({
     userStats.bestPlankSeconds || 0,
     actualSeconds
   );
+  const newPlankSuccessCount = (userStats.plankSuccessCount || 0) + 1;
 
   await updateDoc(userStatsRef, {
     totalPlankSeconds: newTotalPlankSeconds,
     bestPlankSeconds: newBestPlankSeconds,
+    plankSuccessCount: newPlankSuccessCount,
     displayName: normUser.displayName || userStats.displayName || "",
     photoURL: normUser.photoURL || userStats.photoURL || null,
     updatedAt: serverTimestamp(),
@@ -244,7 +250,6 @@ export async function updatePlankStatsOnSuccess({
     newFirstAchievedAt = serverTimestamp();
   }
 
-  // NEW: Update teamId if provided (for existing docs)
   const updates = {
     totalSeconds: newTotalSeconds,
     bestSeconds: newBestSeconds,
@@ -264,6 +269,7 @@ export async function updatePlankStatsOnSuccess({
     userId: normUser.uid,
     newTotalSeconds,
     newBestSeconds,
+    newPlankSuccessCount,
     teamId,
   });
 }
