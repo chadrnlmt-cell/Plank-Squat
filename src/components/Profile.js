@@ -12,14 +12,12 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { getAllUserBadges } from "../badgeHelpers";
-import BadgeDisplay from "./BadgeDisplay";
+import BadgeDisplay, { LegacyBadgeDisplay } from "./BadgeDisplay";
 import ChallengeEndedCard from "./ChallengeEndedCard";
 
 export default function Profile({ user, completedChallenges = [] }) {
   const [profileName, setProfileName] = useState(user?.displayName || "");
-  const [initialProfileName, setInitialProfileName] = useState(
-    user?.displayName || ""
-  );
+  const [initialProfileName, setInitialProfileName] = useState(user?.displayName || "");
   const [isSavingName, setIsSavingName] = useState(false);
   const [nameMessage, setNameMessage] = useState("");
 
@@ -35,11 +33,9 @@ export default function Profile({ user, completedChallenges = [] }) {
     squatSuccessCount: 0,
   });
 
-  // Badge state
   const [badgesLoading, setBadgesLoading] = useState(true);
   const [allBadges, setAllBadges] = useState(null);
 
-  // Helper: format seconds as Xm Ys
   const formatSeconds = (sec) => {
     const s = Number(sec) || 0;
     const mins = Math.floor(s / 60);
@@ -48,21 +44,14 @@ export default function Profile({ user, completedChallenges = [] }) {
     return `${mins}m ${rem}s`;
   };
 
-  // Load or create users/<uid> document for web-app display name
   useEffect(() => {
     const loadUserProfile = async () => {
       if (!user) return;
-
       try {
         const ref = doc(db, "users", user.uid);
         const snap = await getDoc(ref);
-
         if (!snap.exists()) {
-          const initialData = {
-            userId: user.uid,
-            displayName: user.displayName || "",
-            createdAt: new Date().toISOString(),
-          };
+          const initialData = { userId: user.uid, displayName: user.displayName || "", createdAt: new Date().toISOString() };
           await setDoc(ref, initialData);
           setProfileName(initialData.displayName);
           setInitialProfileName(initialData.displayName);
@@ -76,29 +65,19 @@ export default function Profile({ user, completedChallenges = [] }) {
         console.error("Error loading user profile:", err);
       }
     };
-
     loadUserProfile();
   }, [user]);
 
-  // Load stats from userStats and userChallenges
   useEffect(() => {
     const loadStats = async () => {
       if (!user) return;
       setStatsLoading(true);
       setStatsError("");
-
       try {
-        // 1) userStats
         const userStatsRef = doc(db, "userStats", user.uid);
         const userStatsSnap = await getDoc(userStatsRef);
-
-        let totalPlankSeconds = 0;
-        let bestPlankSeconds = 0;
-        let plankSuccessCount = 0;
-        let totalSquats = 0;
-        let bestSquats = 0;
-        let squatSuccessCount = 0;
-
+        let totalPlankSeconds = 0, bestPlankSeconds = 0, plankSuccessCount = 0;
+        let totalSquats = 0, bestSquats = 0, squatSuccessCount = 0;
         if (userStatsSnap.exists()) {
           const data = userStatsSnap.data();
           totalPlankSeconds = data.totalPlankSeconds || 0;
@@ -108,26 +87,10 @@ export default function Profile({ user, completedChallenges = [] }) {
           bestSquats = data.bestSquats || 0;
           squatSuccessCount = data.squatSuccessCount || 0;
         }
-
-        // 2) challengesCompleted from userChallenges
         const ucRef = collection(db, "userChallenges");
-        const qCompleted = query(
-          ucRef,
-          where("userId", "==", user.uid),
-          where("status", "==", "completed")
-        );
+        const qCompleted = query(ucRef, where("userId", "==", user.uid), where("status", "==", "completed"));
         const ucSnap = await getDocs(qCompleted);
-        const challengesCompleted = ucSnap.size;
-
-        setStats({
-          challengesCompleted,
-          totalPlankSeconds,
-          bestPlankSeconds,
-          plankSuccessCount,
-          totalSquats,
-          bestSquats,
-          squatSuccessCount,
-        });
+        setStats({ challengesCompleted: ucSnap.size, totalPlankSeconds, bestPlankSeconds, plankSuccessCount, totalSquats, bestSquats, squatSuccessCount });
       } catch (err) {
         console.error("Error loading profile stats:", err);
         setStatsError("Could not load stats. Please try again later.");
@@ -135,16 +98,13 @@ export default function Profile({ user, completedChallenges = [] }) {
         setStatsLoading(false);
       }
     };
-
     loadStats();
   }, [user]);
 
-  // Load badges
   useEffect(() => {
     const loadBadges = async () => {
       if (!user) return;
       setBadgesLoading(true);
-
       try {
         const badges = await getAllUserBadges(user.uid);
         setAllBadges(badges);
@@ -154,64 +114,26 @@ export default function Profile({ user, completedChallenges = [] }) {
         setBadgesLoading(false);
       }
     };
-
     loadBadges();
   }, [user]);
 
   const handleSaveName = async () => {
     if (!user) return;
     const trimmed = profileName.trim();
-
-    if (!trimmed) {
-      setNameMessage("Name cannot be empty.");
-      return;
-    }
-
-    if (trimmed === initialProfileName) {
-      setNameMessage("No changes to save.");
-      return;
-    }
-
+    if (!trimmed) { setNameMessage("Name cannot be empty."); return; }
+    if (trimmed === initialProfileName) { setNameMessage("No changes to save."); return; }
     setIsSavingName(true);
     setNameMessage("");
-
     try {
-      // 1) Update users/<uid> profile doc
       const userProfileRef = doc(db, "users", user.uid);
-      await setDoc(
-        userProfileRef,
-        {
-          userId: user.uid,
-          displayName: trimmed,
-        },
-        { merge: true }
-      );
-
-      // 2) Update userStats/<uid> displayName if it exists
+      await setDoc(userProfileRef, { userId: user.uid, displayName: trimmed }, { merge: true });
       const userStatsRef = doc(db, "userStats", user.uid);
       const userStatsSnap = await getDoc(userStatsRef);
-      if (userStatsSnap.exists()) {
-        await updateDoc(userStatsRef, {
-          displayName: trimmed,
-        });
-      }
-
-      // 3) Update all challengeUserStats docs for this user
+      if (userStatsSnap.exists()) await updateDoc(userStatsRef, { displayName: trimmed });
       const cusRef = collection(db, "challengeUserStats");
       const qCus = query(cusRef, where("userId", "==", user.uid));
       const cusSnap = await getDocs(qCus);
-      const batchUpdates = [];
-      for (const d of cusSnap.docs) {
-        batchUpdates.push(
-          updateDoc(d.ref, {
-            displayName: trimmed,
-          })
-        );
-      }
-      if (batchUpdates.length > 0) {
-        await Promise.all(batchUpdates);
-      }
-
+      if (cusSnap.docs.length > 0) await Promise.all(cusSnap.docs.map((d) => updateDoc(d.ref, { displayName: trimmed })));
       setInitialProfileName(trimmed);
       setNameMessage("Display name updated across app and leaderboards.");
     } catch (err) {
@@ -222,210 +144,96 @@ export default function Profile({ user, completedChallenges = [] }) {
     }
   };
 
-  // Calculate longest streak across all challenges
   const getLongestStreak = () => {
     if (!allBadges || !allBadges.byChallengeId) return 0;
     let longest = 0;
-    for (const challengeId in allBadges.byChallengeId) {
-      const badgeData = allBadges.byChallengeId[challengeId];
-      if (badgeData.longestStreak > longest) {
-        longest = badgeData.longestStreak;
-      }
+    for (const cId in allBadges.byChallengeId) {
+      const bd = allBadges.byChallengeId[cId];
+      if (bd.longestStreak > longest) longest = bd.longestStreak;
     }
     return longest;
   };
 
-  // Computed averages — only shown when successCount > 0
-  const allTimePlankAvg =
-    stats.plankSuccessCount > 0
-      ? Math.round(stats.totalPlankSeconds / stats.plankSuccessCount)
-      : null;
+  const allTimePlankAvg = stats.plankSuccessCount > 0 ? Math.round(stats.totalPlankSeconds / stats.plankSuccessCount) : null;
+  const allTimeSquatAvg = stats.squatSuccessCount > 0 ? Math.round(stats.totalSquats / stats.squatSuccessCount) : null;
 
-  const allTimeSquatAvg =
-    stats.squatSuccessCount > 0
-      ? Math.round(stats.totalSquats / stats.squatSuccessCount)
-      : null;
-
-  // Section divider style
-  const sectionDividerStyle = {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    margin: "12px 0 8px 0",
-  };
-
-  const sectionLabelStyle = {
-    fontSize: "13px",
-    fontWeight: "700",
-    color: "var(--color-text)",
-    whiteSpace: "nowrap",
-  };
-
-  const sectionLineStyle = {
-    flex: 1,
-    height: "1px",
-    backgroundColor: "#e0e0e0",
-  };
+  const sectionDividerStyle = { display: "flex", alignItems: "center", gap: "8px", margin: "12px 0 8px 0" };
+  const sectionLabelStyle = { fontSize: "13px", fontWeight: "700", color: "var(--color-text)", whiteSpace: "nowrap" };
+  const sectionLineStyle = { flex: 1, height: "1px", backgroundColor: "#e0e0e0" };
 
   const hasPlankData = stats.totalPlankSeconds > 0 || stats.bestPlankSeconds > 0;
   const hasSquatData = stats.totalSquats > 0 || stats.bestSquats > 0;
 
+  // Legacy data from allBadges
+  const legacyData = allBadges?.legacy || {
+    consecutiveRun: 0,
+    consecutiveRunBadgeLevel: 0,
+    earnedConsecutiveRunBadges: [],
+    earnedTimeBadges: [],
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+
       {/* Profile Card */}
-      <div
-        className="card"
-        style={{ textAlign: "left", maxWidth: "500px", margin: "0 auto" }}
-      >
+      <div className="card" style={{ textAlign: "left", maxWidth: "500px", margin: "0 auto" }}>
         <div className="card__body">
           <h2 style={{ marginTop: 0, marginBottom: "12px" }}>Profile</h2>
-          <p
-            style={{
-              margin: "0 0 12px 0",
-              color: "var(--color-text-secondary)",
-              fontSize: "14px",
-            }}
-          >
+          <p style={{ margin: "0 0 12px 0", color: "var(--color-text-secondary)", fontSize: "14px" }}>
             Signed in with: {user.email}
           </p>
-
           <div className="form-group">
             <label className="form-label">Display name (in this app)</label>
-            <input
-              type="text"
-              className="form-control"
-              value={profileName}
-              onChange={(e) => setProfileName(e.target.value)}
-              disabled={isSavingName}
-              placeholder="Enter name to show in app"
-            />
+            <input type="text" className="form-control" value={profileName} onChange={(e) => setProfileName(e.target.value)} disabled={isSavingName} placeholder="Enter name to show in app" />
           </div>
-
-          <button
-            className="btn btn--primary btn--full-width"
-            onClick={handleSaveName}
-            disabled={isSavingName}
-          >
+          <button className="btn btn--primary btn--full-width" onClick={handleSaveName} disabled={isSavingName}>
             {isSavingName ? "Saving..." : "Save Name"}
           </button>
-
-          {nameMessage && (
-            <p
-              style={{
-                marginTop: "8px",
-                fontSize: "13px",
-                color: "#555",
-              }}
-            >
-              {nameMessage}
-            </p>
-          )}
+          {nameMessage && <p style={{ marginTop: "8px", fontSize: "13px", color: "#555" }}>{nameMessage}</p>}
         </div>
       </div>
 
       {/* Stats Card */}
-      <div
-        className="card"
-        style={{ textAlign: "left", maxWidth: "500px", margin: "0 auto" }}
-      >
+      <div className="card" style={{ textAlign: "left", maxWidth: "500px", margin: "0 auto" }}>
         <div className="card__body">
           <h2 style={{ marginTop: 0, marginBottom: "12px" }}>Stats</h2>
-
           {statsLoading && <p>Loading stats...</p>}
-
-          {!statsLoading && statsError && (
-            <p style={{ color: "var(--color-error)" }}>{statsError}</p>
-          )}
-
+          {!statsLoading && statsError && <p style={{ color: "var(--color-error)" }}>{statsError}</p>}
           {!statsLoading && !statsError && (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "6px",
-                fontSize: "14px",
-              }}
-            >
-              <div>
-                <strong>Challenges completed:</strong>{" "}
-                {stats.challengesCompleted}
-              </div>
-
-              {/* ── Plank Section ── */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "14px" }}>
+              <div><strong>Challenges completed:</strong> {stats.challengesCompleted}</div>
               {hasPlankData && (
                 <>
-                  <div style={sectionDividerStyle}>
-                    <span style={sectionLabelStyle}>🏋️ Plank</span>
-                    <div style={sectionLineStyle} />
-                  </div>
-                  <div>
-                    <strong>Total plank time:</strong>{" "}
-                    {formatSeconds(stats.totalPlankSeconds)}
-                  </div>
-                  <div>
-                    <strong>Personal Best plank:</strong>{" "}
-                    {formatSeconds(stats.bestPlankSeconds)}
-                  </div>
-                  {allTimePlankAvg !== null && (
-                    <div>
-                      <strong>All-time plank avg:</strong>{" "}
-                      {formatSeconds(allTimePlankAvg)}
-                    </div>
-                  )}
+                  <div style={sectionDividerStyle}><span style={sectionLabelStyle}>🏐 Plank</span><div style={sectionLineStyle} /></div>
+                  <div><strong>Total plank time:</strong> {formatSeconds(stats.totalPlankSeconds)}</div>
+                  <div><strong>Personal Best plank:</strong> {formatSeconds(stats.bestPlankSeconds)}</div>
+                  {allTimePlankAvg !== null && <div><strong>All-time plank avg:</strong> {formatSeconds(allTimePlankAvg)}</div>}
                 </>
               )}
-
-              {/* ── Squats Section ── */}
               {hasSquatData && (
                 <>
-                  <div style={sectionDividerStyle}>
-                    <span style={sectionLabelStyle}>🦵 Squats</span>
-                    <div style={sectionLineStyle} />
-                  </div>
-                  <div>
-                    <strong>Total squats:</strong> {stats.totalSquats} reps
-                  </div>
-                  <div>
-                    <strong>Personal Best squats:</strong> {stats.bestSquats} reps
-                  </div>
-                  {allTimeSquatAvg !== null && (
-                    <div>
-                      <strong>All-time squat avg:</strong> {allTimeSquatAvg} reps
-                    </div>
-                  )}
+                  <div style={sectionDividerStyle}><span style={sectionLabelStyle}>🦵 Squats</span><div style={sectionLineStyle} /></div>
+                  <div><strong>Total squats:</strong> {stats.totalSquats} reps</div>
+                  <div><strong>Personal Best squats:</strong> {stats.bestSquats} reps</div>
+                  {allTimeSquatAvg !== null && <div><strong>All-time squat avg:</strong> {allTimeSquatAvg} reps</div>}
                 </>
               )}
-
-              {/* Fallback if no activity at all */}
               {!hasPlankData && !hasSquatData && (
-                <div style={{ color: "var(--color-text-secondary)", marginTop: "4px" }}>
-                  Complete a challenge day to see your stats here!
-                </div>
+                <div style={{ color: "var(--color-text-secondary)", marginTop: "4px" }}>Complete a challenge day to see your stats here!</div>
               )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Total Badges Card */}
-      <div
-        className="card"
-        style={{ textAlign: "left", maxWidth: "500px", margin: "0 auto" }}
-      >
+      {/* All-Time Challenge Badges Card (renamed from Total Badges) */}
+      <div className="card" style={{ textAlign: "left", maxWidth: "500px", margin: "0 auto" }}>
         <div className="card__body">
-          <h2 style={{ marginTop: 0, marginBottom: "12px" }}>Total Badges</h2>
-
+          <h2 style={{ marginTop: 0, marginBottom: "12px" }}>🏅 All-Time Challenge Badges</h2>
           {badgesLoading && <p>Loading badges...</p>}
-
           {!badgesLoading && allBadges && (
             <>
-              <div
-                style={{
-                  fontSize: "14px",
-                  color: "var(--color-text-secondary)",
-                  marginBottom: "16px",
-                }}
-              >
+              <div style={{ fontSize: "14px", color: "var(--color-text-secondary)", marginBottom: "16px" }}>
                 Achievements earned across all challenges
                 {getLongestStreak() > 0 && (
                   <div style={{ marginTop: "4px", fontWeight: "600", color: "var(--color-text)" }}>
@@ -449,26 +257,47 @@ export default function Profile({ user, completedChallenges = [] }) {
         </div>
       </div>
 
+      {/* 🏆 Lifetime Achievements Card — gold border, permanent wall */}
+      <div
+        className="card"
+        style={{
+          textAlign: "left",
+          maxWidth: "500px",
+          margin: "0 auto",
+          border: "2px solid #eab308",
+          backgroundColor: "#fffbeb",
+        }}
+      >
+        <div className="card__body">
+          <h2 style={{ marginTop: 0, marginBottom: "4px", color: "#92400e" }}>
+            🏆 Lifetime Achievements
+          </h2>
+          <p style={{ fontSize: "13px", color: "#a16207", marginBottom: "16px", marginTop: 0 }}>
+            Permanent records earned across your entire journey
+          </p>
+
+          {badgesLoading && <p>Loading...</p>}
+
+          {!badgesLoading && (
+            <LegacyBadgeDisplay
+              consecutiveRun={legacyData.consecutiveRun}
+              consecutiveRunBadgeLevel={legacyData.consecutiveRunBadgeLevel}
+              earnedConsecutiveRunBadges={legacyData.earnedConsecutiveRunBadges}
+              earnedTimeBadges={legacyData.earnedTimeBadges}
+              totalPlankSeconds={stats.totalPlankSeconds}
+            />
+          )}
+        </div>
+      </div>
+
       {/* Completed Challenges Section */}
       {completedChallenges.length > 0 && (
         <div style={{ maxWidth: "500px", margin: "0 auto", width: "100%" }}>
-          <hr
-            style={{
-              border: "none",
-              borderTop: "1px solid #ddd",
-              margin: "8px 0 16px 0",
-            }}
-          />
-          <h2 style={{ margin: "0 0 12px 0", fontSize: "20px" }}>
-            Completed Challenges
-          </h2>
+          <hr style={{ border: "none", borderTop: "1px solid #ddd", margin: "8px 0 16px 0" }} />
+          <h2 style={{ margin: "0 0 12px 0", fontSize: "20px" }}>Completed Challenges</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
             {completedChallenges.map((userChallenge) => (
-              <ChallengeEndedCard
-                key={userChallenge.userChallengeId}
-                userChallenge={userChallenge}
-                isAwaitingGlobalEnd={false}
-              />
+              <ChallengeEndedCard key={userChallenge.userChallengeId} userChallenge={userChallenge} isAwaitingGlobalEnd={false} />
             ))}
           </div>
         </div>
