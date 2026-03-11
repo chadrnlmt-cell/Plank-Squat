@@ -16,7 +16,7 @@ import {
 import PlankTimer from "./components/PlankTimer";
 import SquatLogger from "./components/SquatLogger";
 import ChallengeCard from "./components/ChallengeCard";
-import ChallengeEndedCard from "./components/ChallengeCard";
+import ChallengeEndedCard from "./components/ChallengeEndedCard";
 import TabNavigation from "./components/TabNavigation";
 import AdminPanel from "./components/AdminPanel";
 import Leaderboard from "./components/Leaderboard";
@@ -432,9 +432,9 @@ export default function App() {
     ) {
       setBanner({
         message:
-          "✓ Challenge Complete! You crushed all " +
+          "\u2713 Challenge Complete! You crushed all " +
           userChallenge.challengeDetails.numberOfDays +
-          " days! 🎉",
+          " days! \uD83C\uDF89",
         type: "info",
       });
       return;
@@ -453,13 +453,13 @@ export default function App() {
           userChallenge.challengeDetails.numberOfDays;
         if (isFinalDay) {
           setBanner({
-            message: `✓ Challenge Complete! You crushed all ${userChallenge.challengeDetails.numberOfDays} days! 🎉`,
+            message: `\u2713 Challenge Complete! You crushed all ${userChallenge.challengeDetails.numberOfDays} days! \uD83C\uDF89`,
             type: "info",
           });
         } else {
           setBanner({
             message:
-              "✓ Today's challenge crushed! Next up tomorrow at midnight MST",
+              "\u2713 Today's challenge crushed! Next up tomorrow at midnight MST",
             type: "info",
           });
         }
@@ -749,13 +749,12 @@ export default function App() {
                     uc.challengeDetails.startDate,
                     uc.challengeDetails.numberOfDays
                   ) &&
-                  uc.lastCompletedDay !==
-                    uc.challengeDetails.numberOfDays
+                  uc.lastCompletedDay !== uc.challengeDetails.numberOfDays
               );
-              const justCompletedChallenges = getJustCompletedChallenges(
-                userChallenges
-              );
-              const endedChallenges = getVisibleEndedChallenges(userChallenges);
+              const justCompletedChallenges =
+                getJustCompletedChallenges(userChallenges);
+              const endedChallenges =
+                getVisibleEndedChallenges(userChallenges);
               const hasAnyChallenges =
                 activeChallenges.length > 0 ||
                 justCompletedChallenges.length > 0 ||
@@ -784,7 +783,8 @@ export default function App() {
                     const isFinalDay =
                       userChallenge.currentDay ===
                       userChallenge.challengeDetails.numberOfDays;
-                    const badges = challengeBadges[userChallenge.challengeId];
+                    const badges =
+                      challengeBadges[userChallenge.challengeId];
 
                     return (
                       <div
@@ -828,7 +828,7 @@ export default function App() {
                                 color: "var(--color-text)",
                               }}
                             >
-                              📛 Challenge Badges
+                              \uD83D\uDCDB Challenge Badges
                             </div>
                             <BadgeDisplay
                               currentStreak={badges.currentStreak || 0}
@@ -844,12 +844,8 @@ export default function App() {
                                   28: 0,
                                 }
                               }
-                              doubleBadgeCount={
-                                badges.doubleBadgeCount || 0
-                              }
-                              tripleBadgeCount={
-                                badges.tripleBadgeCount || 0
-                              }
+                              doubleBadgeCount={badges.doubleBadgeCount || 0}
+                              tripleBadgeCount={badges.tripleBadgeCount || 0}
                               quadrupleBadgeCount={
                                 badges.quadrupleBadgeCount || 0
                               }
@@ -874,7 +870,7 @@ export default function App() {
                             }}
                           >
                             {attemptNumber === 3
-                              ? "⚠️ Final do-over remaining"
+                              ? "\u26A0\uFE0F Final do-over remaining"
                               : `${redosRemaining} ${
                                   redosRemaining === 1
                                     ? "do-over"
@@ -898,7 +894,9 @@ export default function App() {
 
                         {canStart ? (
                           <button
-                            onClick={() => handleStartChallenge(userChallenge)}
+                            onClick={() =>
+                              handleStartChallenge(userChallenge)
+                            }
                             style={{
                               marginTop: "15px",
                               padding: "10px 20px",
@@ -911,9 +909,10 @@ export default function App() {
                             }}
                           >
                             {isFinalDay
-                              ? `Start Day ${userChallenge.currentDay} (Final Day) - Make it count! 🎯`
-                              : `Start Day ${userChallenge.currentDay} 💪`}
-                            {attemptNumber > 1 && ` (Attempt ${attemptNumber})`}
+                              ? `Start Day ${userChallenge.currentDay} (Final Day) - Make it count! \uD83C\uDFAF`
+                              : `Start Day ${userChallenge.currentDay} \uD83D\uDCAA`}
+                            {attemptNumber > 1 &&
+                              ` (Attempt ${attemptNumber})`}
                           </button>
                         ) : (
                           <div
@@ -929,8 +928,8 @@ export default function App() {
                             }}
                           >
                             {isFinalDay
-                              ? `✓ Challenge Complete! You crushed all ${userChallenge.challengeDetails.numberOfDays} days! 🎉`
-                              : "✓ Today's challenge crushed! Next up tomorrow at midnight MST"}
+                              ? `\u2713 Challenge Complete! You crushed all ${userChallenge.challengeDetails.numberOfDays} days! \uD83C\uDF89`
+                              : "\u2713 Today's challenge crushed! Next up tomorrow at midnight MST"}
                           </div>
                         )}
                       </div>
