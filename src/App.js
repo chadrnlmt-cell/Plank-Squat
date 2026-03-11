@@ -24,7 +24,7 @@ import Profile from "./components/Profile";
 import Banner from "./components/Banner";
 import BadgeDisplay from "./components/BadgeDisplay";
 import ChallengeGuide from "./components/ChallengeGuide";
-import { getChallengeBadges } from "./badgeHelpers";
+import { getChallengeBadges, breakConsecutiveRun } from "./badgeHelpers";
 import {
   getPhoenixDate,
   getChallengeDayFromStart,
@@ -199,6 +199,7 @@ export default function App() {
     if (skippedDays.length > 0) {
       const attemptsRef = collection(db, "attempts");
       const nowTs = Timestamp.fromDate(getPhoenixDate());
+      let newMissedWritten = false;
 
       for (const d of skippedDays) {
         const existingMissedQuery = query(
@@ -227,6 +228,18 @@ export default function App() {
           timestamp: nowTs,
         });
         missedDaysCount += 1;
+        newMissedWritten = true;
+      }
+
+      // Break the Lifetime Achievements consecutive run once per sync
+      // when at least one NEW missed day was written (not already recorded)
+      if (newMissedWritten) {
+        try {
+          await breakConsecutiveRun(userChallengeData.userId);
+        } catch (err) {
+          // Non-fatal — don't block the rest of the sync
+          console.error("breakConsecutiveRun error during sync:", err);
+        }
       }
 
       await updateDoc(doc(db, "userChallenges", docSnap.id), {
