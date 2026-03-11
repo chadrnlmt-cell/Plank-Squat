@@ -638,26 +638,16 @@ export default function App() {
         )
     );
 
-    const plankChallenges = endedChallenges
-      .filter((uc) => uc.challengeDetails.type === "plank")
+    return endedChallenges
       .sort((a, b) => {
         const aEnd = a.lastCompletedDate?.toMillis?.() || 0;
         const bEnd = b.lastCompletedDate?.toMillis?.() || 0;
         return bEnd - aEnd;
       })
-      .slice(0, 2);
-
-    const squatChallenges = endedChallenges
-      .filter((uc) => uc.challengeDetails.type === "squat")
-      .sort((a, b) => {
-        const aEnd = a.lastCompletedDate?.toMillis?.() || 0;
-        const bEnd = b.lastCompletedDate?.toMillis?.() || 0;
-        return bEnd - aEnd;
-      })
-      .slice(0, 2);
-
-    return [...plankChallenges, ...squatChallenges];
+      .slice(0, 4);
   };
+
+  const completedChallenges = getVisibleEndedChallenges(userChallenges);
 
   return (
     <div style={{ paddingBottom: "80px" }}>
@@ -753,18 +743,22 @@ export default function App() {
               );
               const justCompletedChallenges =
                 getJustCompletedChallenges(userChallenges);
-              const endedChallenges =
-                getVisibleEndedChallenges(userChallenges);
               const hasAnyChallenges =
                 activeChallenges.length > 0 ||
-                justCompletedChallenges.length > 0 ||
-                endedChallenges.length > 0;
+                justCompletedChallenges.length > 0;
 
               if (!hasAnyChallenges) {
                 return (
-                  <p style={{ color: "#999" }}>
-                    Ready to start? Check out Available challenges!
-                  </p>
+                  <div>
+                    <p style={{ color: "#999" }}>
+                      Ready to start? Check out Available challenges!
+                    </p>
+                    {completedChallenges.length > 0 && (
+                      <p style={{ color: "#999", marginTop: "4px" }}>
+                        See your completed challenges on the Profile tab.
+                      </p>
+                    )}
+                  </div>
                 );
               }
 
@@ -943,14 +937,6 @@ export default function App() {
                       isAwaitingGlobalEnd={true}
                     />
                   ))}
-
-                  {endedChallenges.map((userChallenge) => (
-                    <ChallengeEndedCard
-                      key={userChallenge.userChallengeId}
-                      userChallenge={userChallenge}
-                      isAwaitingGlobalEnd={false}
-                    />
-                  ))}
                 </div>
               );
             })()}
@@ -961,7 +947,9 @@ export default function App() {
           <Leaderboard user={user} challenges={challenges} />
         )}
 
-        {activeTab === "profile" && <Profile user={user} />}
+        {activeTab === "profile" && (
+          <Profile user={user} completedChallenges={completedChallenges} />
+        )}
 
         {activeTab === "challengeGuide" && <ChallengeGuide />}
 

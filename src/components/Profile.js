@@ -13,8 +13,9 @@ import {
 } from "firebase/firestore";
 import { getAllUserBadges } from "../badgeHelpers";
 import BadgeDisplay from "./BadgeDisplay";
+import ChallengeEndedCard from "./ChallengeEndedCard";
 
-export default function Profile({ user }) {
+export default function Profile({ user, completedChallenges = [] }) {
   const [profileName, setProfileName] = useState(user?.displayName || "");
   const [initialProfileName, setInitialProfileName] = useState(
     user?.displayName || ""
@@ -353,12 +354,12 @@ export default function Profile({ user }) {
               </div>
               <BadgeDisplay
                 streakBadges={allBadges.allStreakBadges}
-                currentStreak={0} // Don't show current streak in total view
+                currentStreak={0}
                 doubleBadgeCount={allBadges.allMultipliers.double}
                 tripleBadgeCount={allBadges.allMultipliers.triple}
                 quadrupleBadgeCount={allBadges.allMultipliers.quadruple}
                 timeBadges={allBadges.allTimeBadges}
-                totalPlankSeconds={0} // Don't show time progress in total view
+                totalPlankSeconds={0}
                 showProgress={false}
                 compact={false}
               />
@@ -366,6 +367,31 @@ export default function Profile({ user }) {
           )}
         </div>
       </div>
+
+      {/* Completed Challenges Section */}
+      {completedChallenges.length > 0 && (
+        <div style={{ maxWidth: "500px", margin: "0 auto", width: "100%" }}>
+          <hr
+            style={{
+              border: "none",
+              borderTop: "1px solid #ddd",
+              margin: "8px 0 16px 0",
+            }}
+          />
+          <h2 style={{ margin: "0 0 12px 0", fontSize: "20px" }}>
+            Completed Challenges
+          </h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+            {completedChallenges.map((userChallenge) => (
+              <ChallengeEndedCard
+                key={userChallenge.userChallengeId}
+                userChallenge={userChallenge}
+                isAwaitingGlobalEnd={false}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
