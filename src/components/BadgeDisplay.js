@@ -4,6 +4,7 @@ import React from "react";
 /**
  * Badge display component - Progressive reveal with left-to-right fill
  * Shows only the NEXT badge to earn, with completed badges below
+ * (Existing challenge badge display — unchanged)
  */
 export default function BadgeDisplay({
   currentStreak = 0,
@@ -18,38 +19,31 @@ export default function BadgeDisplay({
   showProgress = true,
   compact = false,
 }) {
-  // Format time in minutes/hours
   const formatTime = (seconds) => {
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     if (hours > 0) {
-      if (mins > 0) {
-        return `${hours}h ${mins}m`;
-      }
+      if (mins > 0) return `${hours}h ${mins}m`;
       return `${hours}h`;
     }
     return `${mins}m`;
   };
 
-  // Get next streak milestone to achieve
   const getNextStreakMilestone = () => {
     const milestones = [3, 7, 14, 21, 28];
     for (const m of milestones) {
       if (currentStreak < m) return m;
     }
-    return null; // Maxed out at 28
+    return null;
   };
 
-  // Get next time milestone (30 min increments up to 10 hours)
   const getNextTimeMilestone = () => {
     const milestones = [];
-    for (let i = 1800; i <= 36000; i += 1800) {
-      milestones.push(i);
-    }
+    for (let i = 1800; i <= 36000; i += 1800) milestones.push(i);
     for (const m of milestones) {
       if (totalPlankSeconds < m) return m;
     }
-    return null; // Maxed out at 10 hours
+    return null;
   };
 
   const nextStreakMilestone = getNextStreakMilestone();
@@ -68,75 +62,24 @@ export default function BadgeDisplay({
     color: "#78350f",
   };
 
-  // Count total completed streak badges for display
-  const hasCompletedBadges = Object.values(completedStreakBadges).some(count => count > 0);
+  const hasCompletedBadges = Object.values(completedStreakBadges).some((count) => count > 0);
   const hasCompletedTimeBadges = Object.keys(completedTimeBadges).length > 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "12px" : "16px" }}>
-      {/* Streak Progress - Only show NEXT badge */}
+      {/* Streak Progress */}
       {nextStreakMilestone && (
         <div>
           <div style={{ fontSize: compact ? "12px" : "13px", fontWeight: "600", marginBottom: "8px", color: "var(--color-text-secondary)" }}>
             🔥 Streak Progress
           </div>
-          
-          {/* Next Badge Card */}
-          <div
-            style={{
-              padding: "12px",
-              backgroundColor: "#f9fafb",
-              borderRadius: "8px",
-              border: "2px solid #e5e7eb",
-            }}
-          >
+          <div style={{ padding: "12px", backgroundColor: "#f9fafb", borderRadius: "8px", border: "2px solid #e5e7eb" }}>
             <div style={{ fontSize: "13px", fontWeight: "600", marginBottom: "8px", color: "#6b7280" }}>
               Next Badge: {nextStreakMilestone} Day Streak 🔥
             </div>
-            
-            {/* Progress Bar Badge */}
-            <div
-              style={{
-                position: "relative",
-                width: "100%",
-                height: "40px",
-                backgroundColor: "#e5e7eb",
-                borderRadius: "8px",
-                overflow: "hidden",
-                border: "2px solid #d1d5db",
-              }}
-            >
-              {/* Filled portion */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  height: "100%",
-                  width: `${(currentStreak / nextStreakMilestone) * 100}%`,
-                  backgroundColor: "#fbbf24",
-                  transition: "width 0.5s ease",
-                  borderRight: currentStreak > 0 && currentStreak < nextStreakMilestone ? "2px solid #f59e0b" : "none",
-                }}
-              />
-              
-              {/* Text overlay */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "16px",
-                  fontWeight: "bold",
-                  color: currentStreak >= nextStreakMilestone / 2 ? "#78350f" : "#374151",
-                  textShadow: "0 1px 2px rgba(255,255,255,0.8)",
-                }}
-              >
+            <div style={{ position: "relative", width: "100%", height: "40px", backgroundColor: "#e5e7eb", borderRadius: "8px", overflow: "hidden", border: "2px solid #d1d5db" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${(currentStreak / nextStreakMilestone) * 100}%`, backgroundColor: "#fbbf24", transition: "width 0.5s ease", borderRight: currentStreak > 0 && currentStreak < nextStreakMilestone ? "2px solid #f59e0b" : "none" }} />
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: "bold", color: currentStreak >= nextStreakMilestone / 2 ? "#78350f" : "#374151", textShadow: "0 1px 2px rgba(255,255,255,0.8)" }}>
                 {currentStreak}/{nextStreakMilestone} days
               </div>
             </div>
@@ -155,15 +98,7 @@ export default function BadgeDisplay({
               const count = completedStreakBadges[days] || 0;
               if (count === 0) return null;
               return (
-                <div
-                  key={days}
-                  style={{
-                    ...badgeStyle,
-                    backgroundColor: "#fef3c7",
-                    border: "2px solid #fbbf24",
-                    color: "#78350f",
-                  }}
-                >
+                <div key={days} style={{ ...badgeStyle, backgroundColor: "#fef3c7", border: "2px solid #fbbf24", color: "#78350f" }}>
                   🔥 {days}d {count > 1 ? `(x${count})` : ""}
                 </div>
               );
@@ -201,109 +136,291 @@ export default function BadgeDisplay({
         </div>
       </div>
 
-      {/* Time Badges (Plank only) - Progressive reveal like streaks */}
+      {/* Time Badges (Plank only) */}
       {totalPlankSeconds > 0 && (
         <div>
           <div style={{ fontSize: compact ? "12px" : "13px", fontWeight: "600", marginBottom: "8px", color: "var(--color-text-secondary)" }}>
             ⏱️ Time Milestones
           </div>
-          
-          {/* Next Time Badge Card */}
           {nextTimeMilestone && (
-            <div
-              style={{
-                padding: "12px",
-                backgroundColor: "#f9fafb",
-                borderRadius: "8px",
-                border: "2px solid #e5e7eb",
-                marginBottom: "12px",
-              }}
-            >
+            <div style={{ padding: "12px", backgroundColor: "#f9fafb", borderRadius: "8px", border: "2px solid #e5e7eb", marginBottom: "12px" }}>
               <div style={{ fontSize: "13px", fontWeight: "600", marginBottom: "8px", color: "#6b7280" }}>
                 Next Badge: {formatTime(nextTimeMilestone)} Total Time ⏱️
               </div>
-              
-              {/* Progress Bar Badge */}
-              <div
-                style={{
-                  position: "relative",
-                  width: "100%",
-                  height: "40px",
-                  backgroundColor: "#e5e7eb",
-                  borderRadius: "8px",
-                  overflow: "hidden",
-                  border: "2px solid #d1d5db",
-                }}
-              >
-                {/* Filled portion */}
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    height: "100%",
-                    width: `${(totalPlankSeconds / nextTimeMilestone) * 100}%`,
-                    backgroundColor: "#22c55e",
-                    transition: "width 0.5s ease",
-                    borderRight: totalPlankSeconds > 0 && totalPlankSeconds < nextTimeMilestone ? "2px solid #16a34a" : "none",
-                  }}
-                />
-                
-                {/* Text overlay */}
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "16px",
-                    fontWeight: "bold",
-                    color: totalPlankSeconds >= nextTimeMilestone / 2 ? "#14532d" : "#374151",
-                    textShadow: "0 1px 2px rgba(255,255,255,0.8)",
-                  }}
-                >
+              <div style={{ position: "relative", width: "100%", height: "40px", backgroundColor: "#e5e7eb", borderRadius: "8px", overflow: "hidden", border: "2px solid #d1d5db" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${(totalPlankSeconds / nextTimeMilestone) * 100}%`, backgroundColor: "#22c55e", transition: "width 0.5s ease", borderRight: totalPlankSeconds > 0 && totalPlankSeconds < nextTimeMilestone ? "2px solid #16a34a" : "none" }} />
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: "bold", color: totalPlankSeconds >= nextTimeMilestone / 2 ? "#14532d" : "#374151", textShadow: "0 1px 2px rgba(255,255,255,0.8)" }}>
                   {formatTime(totalPlankSeconds)}/{formatTime(nextTimeMilestone)}
                 </div>
               </div>
             </div>
           )}
-
-          {/* Completed Time Badges */}
           {hasCompletedTimeBadges && (
             <div>
-              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", color: "#6b7280" }}>
-                🏆 Earned Time Badges
-              </div>
+              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", color: "#6b7280" }}>🏆 Earned Time Badges</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                {Object.keys(completedTimeBadges)
-                  .map(Number)
-                  .sort((a, b) => b - a)
-                  .map((seconds) => {
-                    const count = completedTimeBadges[seconds] || 0;
-                    if (count === 0) return null;
-                    return (
-                      <div
-                        key={seconds}
-                        style={{
-                          ...badgeStyle,
-                          backgroundColor: "#dcfce7",
-                          border: "2px solid #22c55e",
-                          color: "#14532d",
-                        }}
-                      >
-                        ⏱️ {formatTime(seconds)} {count > 1 ? `(x${count})` : ""}
-                      </div>
-                    );
-                  })}
+                {Object.keys(completedTimeBadges).map(Number).sort((a, b) => b - a).map((seconds) => {
+                  const count = completedTimeBadges[seconds] || 0;
+                  if (count === 0) return null;
+                  return (
+                    <div key={seconds} style={{ ...badgeStyle, backgroundColor: "#dcfce7", border: "2px solid #22c55e", color: "#14532d" }}>
+                      ⏱️ {formatTime(seconds)} {count > 1 ? `(x${count})` : ""}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LIFETIME ACHIEVEMENTS BADGE DISPLAY
+// ---------------------------------------------------------------------------
+
+/**
+ * Formats seconds into a readable time string
+ */
+function formatLegacyTime(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) {
+    if (mins > 0) return `${hours}h ${mins}m`;
+    return `${hours}h`;
+  }
+  return `${mins}m`;
+}
+
+/**
+ * Trophy card for a single earned legacy milestone.
+ * Large centered number, gold gradient, permanent on the achievement wall.
+ */
+function TrophyCard({ label, sublabel, color = "#eab308", bgColor = "#fef9c3", borderColor = "#eab308", emoji = "🏆" }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        width: "80px",
+        minHeight: "88px",
+        backgroundColor: bgColor,
+        border: `2px solid ${borderColor}`,
+        borderRadius: "12px",
+        padding: "8px 4px",
+        boxShadow: "0 2px 8px rgba(234,179,8,0.18)",
+      }}
+    >
+      <div style={{ fontSize: "22px", lineHeight: 1, marginBottom: "4px" }}>{emoji}</div>
+      <div
+        style={{
+          fontSize: "26px",
+          fontWeight: "900",
+          color: color,
+          lineHeight: 1,
+          letterSpacing: "-0.5px",
+        }}
+      >
+        {label}
+      </div>
+      {sublabel && (
+        <div
+          style={{
+            fontSize: "11px",
+            fontWeight: "600",
+            color: color,
+            opacity: 0.8,
+            marginTop: "3px",
+            textAlign: "center",
+            lineHeight: 1.2,
+          }}
+        >
+          {sublabel}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * LegacyBadgeDisplay — Lifetime Achievements card content.
+ *
+ * Props:
+ *   consecutiveRun          {number}  current live count (frozen between challenges)
+ *   consecutiveRunBadgeLevel{number}  highest milestone reached mid-run (not yet awarded)
+ *   earnedConsecutiveRunBadges {number[]} milestones awarded at rest [30, 60, ...]
+ *   earnedTimeBadges        {number[]} all 30-min plank time milestones earned [1800, 3600, ...]
+ *   totalPlankSeconds       {number}  lifetime total plank seconds (from userStats)
+ */
+export function LegacyBadgeDisplay({
+  consecutiveRun = 0,
+  consecutiveRunBadgeLevel = 0,
+  earnedConsecutiveRunBadges = [],
+  earnedTimeBadges = [],
+  totalPlankSeconds = 0,
+}) {
+  // Next consecutive run milestone
+  const RUN_MILESTONES = (() => {
+    const m = [];
+    for (let i = 30; i <= 365; i += 30) m.push(i);
+    if (!m.includes(365)) m.push(365);
+    return m;
+  })();
+
+  const TIME_MILESTONES = (() => {
+    const m = [];
+    for (let i = 1800; i <= 36000; i += 1800) m.push(i);
+    return m;
+  })();
+
+  const nextRunMilestone = RUN_MILESTONES.find((m) => consecutiveRun < m) || null;
+  const nextTimeMilestone = TIME_MILESTONES.find((m) => !earnedTimeBadges.includes(m)) || null;
+
+  const hasEarnedRunBadges = earnedConsecutiveRunBadges.length > 0;
+  const hasEarnedTimeBadges = earnedTimeBadges.length > 0;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+
+      {/* ── Best Consecutive Run ───────────────────────────────────── */}
+      <div>
+        <div style={{ fontSize: "13px", fontWeight: "700", marginBottom: "10px", color: "#92400e", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          🔥 Best Consecutive Run
+        </div>
+
+        {/* Live counter */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginBottom: "12px" }}>
+          <span style={{ fontSize: "40px", fontWeight: "900", color: "#eab308", lineHeight: 1 }}>
+            {consecutiveRun}
+          </span>
+          <span style={{ fontSize: "16px", fontWeight: "600", color: "#92400e" }}>days</span>
+          {consecutiveRun > 0 && (
+            <span style={{ fontSize: "13px", color: "#a16207", marginLeft: "4px" }}>
+              🔥 running
+            </span>
+          )}
+        </div>
+
+        {/* Progress bar toward next milestone */}
+        {nextRunMilestone && (
+          <div style={{ marginBottom: "14px" }}>
+            <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#92400e" }}>
+              Next trophy: {nextRunMilestone} days
+            </div>
+            <div style={{ position: "relative", width: "100%", height: "36px", backgroundColor: "#fef3c7", borderRadius: "8px", overflow: "hidden", border: "2px solid #fde68a" }}>
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0, left: 0,
+                  height: "100%",
+                  width: `${Math.min((consecutiveRun / nextRunMilestone) * 100, 100)}%`,
+                  background: "linear-gradient(90deg, #fbbf24, #eab308)",
+                  transition: "width 0.5s ease",
+                }}
+              />
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: "#78350f", textShadow: "0 1px 2px rgba(255,255,255,0.7)" }}>
+                {consecutiveRun}/{nextRunMilestone} days
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Earned trophies wall */}
+        {hasEarnedRunBadges ? (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+            {[...earnedConsecutiveRunBadges]
+              .sort((a, b) => b - a)
+              .map((milestone) => (
+                <TrophyCard
+                  key={milestone}
+                  emoji="🏆"
+                  label={`${milestone}`}
+                  sublabel="days"
+                  color="#92400e"
+                  bgColor="#fef3c7"
+                  borderColor="#eab308"
+                />
+              ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: "13px", color: "#a16207", fontStyle: "italic" }}>
+            Complete your first 30-day run to earn a trophy!
+          </div>
+        )}
+      </div>
+
+      {/* ── Lifetime Plank Time ────────────────────────────────────── */}
+      <div>
+        <div style={{ fontSize: "13px", fontWeight: "700", marginBottom: "10px", color: "#065f46", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          ⏱️ Lifetime Plank Time
+        </div>
+
+        {/* Total time display */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginBottom: "12px" }}>
+          <span style={{ fontSize: "32px", fontWeight: "900", color: "#059669", lineHeight: 1 }}>
+            {formatLegacyTime(totalPlankSeconds)}
+          </span>
+          <span style={{ fontSize: "13px", color: "#065f46" }}>total</span>
+        </div>
+
+        {/* Progress bar toward next time milestone */}
+        {nextTimeMilestone && (
+          <div style={{ marginBottom: "14px" }}>
+            <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#065f46" }}>
+              Next trophy: {formatLegacyTime(nextTimeMilestone)}
+            </div>
+            <div style={{ position: "relative", width: "100%", height: "36px", backgroundColor: "#d1fae5", borderRadius: "8px", overflow: "hidden", border: "2px solid #a7f3d0" }}>
+              {/* base from last earned milestone */}
+              {(() => {
+                const lastEarned = earnedTimeBadges.length > 0
+                  ? Math.max(...earnedTimeBadges)
+                  : 0;
+                const rangeStart = lastEarned;
+                const rangeEnd = nextTimeMilestone;
+                const progress = Math.min(
+                  ((totalPlankSeconds - rangeStart) / (rangeEnd - rangeStart)) * 100,
+                  100
+                );
+                return (
+                  <>
+                    <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${progress}%`, background: "linear-gradient(90deg, #34d399, #059669)", transition: "width 0.5s ease" }} />
+                    <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: "#064e3b", textShadow: "0 1px 2px rgba(255,255,255,0.7)" }}>
+                      {formatLegacyTime(totalPlankSeconds)}/{formatLegacyTime(nextTimeMilestone)}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* Earned time trophies wall — ALL milestones stay permanently */}
+        {hasEarnedTimeBadges ? (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+            {[...earnedTimeBadges]
+              .sort((a, b) => b - a)
+              .map((milestone) => (
+                <TrophyCard
+                  key={milestone}
+                  emoji="⏱️"
+                  label={formatLegacyTime(milestone)}
+                  sublabel="plank"
+                  color="#064e3b"
+                  bgColor="#d1fae5"
+                  borderColor="#34d399"
+                />
+              ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: "13px", color: "#059669", fontStyle: "italic" }}>
+            Reach 30 minutes of total plank time to earn your first trophy!
+          </div>
+        )}
+      </div>
     </div>
   );
 }
