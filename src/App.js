@@ -80,10 +80,13 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
-      loadChallenges();
-      loadUserChallenges();
+      // Run auto-archive check first, then load challenges
+      autoArchiveEndedChallenges().then(() => {
+        loadChallenges();
+        loadUserChallenges();
+      });
     }
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const loadBadges = async () => {
@@ -103,6 +106,202 @@ export default function App() {
 
     loadBadges();
   }, [user, userChallenges, activeTab]);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // AUTO-ARCHIVE: Runs on every app load for any logged-in user.
+  // Finds isActive challenges that have ended (Phoenix midnight), acquires a
+  // lock field to prevent race conditions, archives the leaderboard to
+  // leaderboardHistory, then flips isActive to false.
+  // Silent try/catch — if it fails, it will retry on next app load.
+  // ─────────────────────────────────────────────────────────────────────────────
+  const autoArchiveEndedChallenges = async () => {
+    try {
+      // Fetch all currently active challenges
+      const q = query(
+        collection(db, "challenges"),
+        where("isActive", "==", true)
+      );
+      const snapshot = await getDocs(q);
+
+      for (const docSnap of snapshot.docs) {
+        const challenge = { id: docSnap.id, ...docSnap.data() };
+
+        // Skip if not fully configured
+        if (!challenge.startDate || !challenge.numberOfDays) continue;
+
+        // Skip if challenge hasn't ended yet (Phoenix time)
+        if (!isChallengeEnded(challenge.startDate, challenge.numberOfDays)) continue;
+
+        // Skip if already locked by another user running the archive
+        if (challenge.archivePending === true) continue;
+
+        // Check if already archived — skip if so
+        const existingArchiveQuery = query(
+          collection(db, "leaderboardHistory"),
+          where("challengeId", "==", challenge.id)
+        );
+        const existingArchiveSnap = await getDocs(existingArchiveQuery);
+        if (!existingArchiveSnap.empty) {
+          // Already archived — just make sure isActive is false
+          if (challenge.isActive) {
+            await updateDoc(doc(db, "challenges", challenge.id), {
+              isActive: false,
+              archivePending: false,
+            });
+          }
+          continue;
+        }
+
+        // Acquire lock to prevent concurrent users from double-archiving
+        await updateDoc(doc(db, "challenges", challenge.id), {
+          archivePending: true,
+        });
+
+        try {
+          await runChallengeArchive(challenge);
+
+          // Archive complete — flip isActive off and release lock
+          await updateDoc(doc(db, "challenges", challenge.id), {
+            isActive: false,
+            archivePending: false,
+          });
+
+          console.log(`Auto-archived challenge: ${challenge.name}`);
+        } catch (archiveErr) {
+          // Release lock so next load can retry
+          console.error(`Error archiving challenge ${challenge.name}:`, archiveErr);
+          await updateDoc(doc(db, "challenges", challenge.id), {
+            archivePending: false,
+          }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      // Non-fatal — will retry on next load
+      console.error("autoArchiveEndedChallenges error:", err);
+    }
+  };
+
+  // Builds and writes the leaderboardHistory document for a challenge.
+  // Mirrors the logic in AdminPanel.js archiveLeaderboardBeforeDeactivate
+  // so both manual and automatic archives produce identical records.
+  const runChallengeArchive = async (challenge) => {
+    // Get all challengeUserStats for this challenge
+    const statsQuery = query(
+      collection(db, "challengeUserStats"),
+      where("challengeId", "==", challenge.id)
+    );
+    const statsSnapshot = await getDocs(statsQuery);
+
+    // Load teams (needed for team challenges)
+    const teamsQuery = query(collection(db, "teams"));
+    const teamsSnapshot = await getDocs(teamsQuery);
+    const teams = teamsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    const entries = statsSnapshot.docs.map((d) => {
+      const data = d.data();
+      return {
+        userId: data.userId || null,
+        displayName: data.displayName || "Anonymous",
+        photoURL: data.photoURL || null,
+        totalSeconds: data.totalSeconds || 0,
+        totalReps: data.totalReps || 0,
+        bestSeconds: data.bestSeconds || 0,
+        bestReps: data.bestReps || 0,
+        firstAchievedAt: data.firstAchievedAt || null,
+        teamId: data.teamId || null,
+      };
+    });
+
+    const isPlank = challenge.type === "plank";
+
+    const compareTotals = (a, b) => {
+      const aVal = isPlank ? a.totalSeconds : a.totalReps;
+      const bVal = isPlank ? b.totalSeconds : b.totalReps;
+      if (bVal !== aVal) return bVal - aVal;
+      const aTime = a.firstAchievedAt?.toMillis ? a.firstAchievedAt.toMillis() : null;
+      const bTime = b.firstAchievedAt?.toMillis ? b.firstAchievedAt.toMillis() : null;
+      if (aTime && bTime && aTime !== bTime) return aTime - bTime;
+      const nameA = (a.displayName || "").toLowerCase();
+      const nameB = (b.displayName || "").toLowerCase();
+      if (nameA < nameB) return -1;
+      if (nameA > nameB) return 1;
+      return 0;
+    };
+
+    const compareBests = (a, b) => {
+      const aVal = isPlank ? a.bestSeconds : a.bestReps;
+      const bVal = isPlank ? b.bestSeconds : b.bestReps;
+      if (bVal !== aVal) return bVal - aVal;
+      const aTime = a.firstAchievedAt?.toMillis ? a.firstAchievedAt.toMillis() : null;
+      const bTime = b.firstAchievedAt?.toMillis ? b.firstAchievedAt.toMillis() : null;
+      if (aTime && bTime && aTime !== bTime) return aTime - bTime;
+      const nameA = (a.displayName || "").toLowerCase();
+      const nameB = (b.displayName || "").toLowerCase();
+      if (nameA < nameB) return -1;
+      if (nameA > nameB) return 1;
+      return 0;
+    };
+
+    const topTotal = [...entries].sort(compareTotals).slice(0, 10);
+    const topBest = [...entries].sort(compareBests).slice(0, 5);
+
+    // Calculate team standings if applicable
+    let teamStandings = [];
+    if (challenge.isTeamChallenge) {
+      const teamTotals = {};
+      entries.forEach((row) => {
+        if (row.teamId) {
+          if (!teamTotals[row.teamId]) {
+            teamTotals[row.teamId] = {
+              teamId: row.teamId,
+              totalSeconds: 0,
+              totalReps: 0,
+              memberCount: 0,
+            };
+          }
+          teamTotals[row.teamId].totalSeconds += row.totalSeconds || 0;
+          teamTotals[row.teamId].totalReps += row.totalReps || 0;
+          teamTotals[row.teamId].memberCount += 1;
+        }
+      });
+
+      teamStandings = Object.values(teamTotals).map((t) => {
+        const team = teams.find((tm) => tm.id === t.teamId);
+        return {
+          ...t,
+          teamName: team?.name || "Unknown Team",
+          teamColor: team?.color || "#999",
+          avgSeconds:
+            t.memberCount > 0 ? Math.round(t.totalSeconds / t.memberCount) : 0,
+          avgReps:
+            t.memberCount > 0 ? Math.round(t.totalReps / t.memberCount) : 0,
+        };
+      });
+    }
+
+    // End date = startDate + numberOfDays - 1 (last day of challenge)
+    const startDate = challenge.startDate?.toDate
+      ? challenge.startDate.toDate()
+      : new Date(challenge.startDate);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + challenge.numberOfDays - 1);
+
+    await addDoc(collection(db, "leaderboardHistory"), {
+      challengeId: challenge.id,
+      challengeName: challenge.name,
+      challengeType: challenge.type,
+      challengeDescription: challenge.description,
+      isTeamChallenge: challenge.isTeamChallenge || false,
+      startDate: challenge.startDate,
+      endDate: Timestamp.fromDate(endDate),
+      numberOfDays: challenge.numberOfDays,
+      archivedAt: Timestamp.fromDate(getPhoenixDate()),
+      archivedBy: "auto",
+      topTotal,
+      topBest,
+      teamStandings,
+    });
+  };
 
   const loadChallenges = async () => {
     try {
