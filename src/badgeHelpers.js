@@ -58,19 +58,47 @@ function getChallengeBadgeData(userStatsData, challengeId) {
 }
 
 /**
- * Get or initialize the legacy badge data from userStats
+ * Get or initialize the legacy badge data from userStats.
+ * earnedTimeBadges and earnedConsecutiveRunBadges are now arrays of
+ * { value: number, challengeId: string } objects for safe per-challenge reset.
+ * We normalise legacy flat arrays (old schema) transparently.
  */
 function getLegacyBadgeData(userStatsData) {
   const legacy = userStatsData?.badges?.legacy || {};
-  return {
-    // Best Consecutive Run (streak across all challenges, no calendar gap penalty)
-    consecutiveRun: legacy.consecutiveRun || 0,
-    consecutiveRunBadgeLevel: legacy.consecutiveRunBadgeLevel || 0, // highest milestone reached mid-run
-    earnedConsecutiveRunBadges: legacy.earnedConsecutiveRunBadges || [], // milestones awarded at rest [30,60,...]
 
-    // Lifetime plank time badges — every 30-min milestone earned permanently
-    earnedTimeBadges: legacy.earnedTimeBadges || [], // array of milestone seconds [1800, 3600, ...]
+  // Normalise earnedConsecutiveRunBadges — old schema was number[], new is {value,challengeId}[]
+  const rawRun = legacy.earnedConsecutiveRunBadges || [];
+  const earnedConsecutiveRunBadges = rawRun.map((item) =>
+    typeof item === "object" ? item : { value: item, challengeId: null }
+  );
+
+  // Normalise earnedTimeBadges — old schema was number[], new is {value,challengeId}[]
+  const rawTime = legacy.earnedTimeBadges || [];
+  const earnedTimeBadges = rawTime.map((item) =>
+    typeof item === "object" ? item : { value: item, challengeId: null }
+  );
+
+  return {
+    consecutiveRun: legacy.consecutiveRun || 0,
+    consecutiveRunBadgeLevel: legacy.consecutiveRunBadgeLevel || 0,
+    earnedConsecutiveRunBadges,
+    earnedTimeBadges,
   };
+}
+
+/**
+ * Helper: extract raw milestone values from the new {value,challengeId}[] schema
+ */
+function legacyRunValues(earnedConsecutiveRunBadges) {
+  return earnedConsecutiveRunBadges.map((item) =>
+    typeof item === "object" ? item.value : item
+  );
+}
+
+function legacyTimeValues(earnedTimeBadges) {
+  return earnedTimeBadges.map((item) =>
+    typeof item === "object" ? item.value : item
+  );
 }
 
 /**
@@ -183,9 +211,6 @@ function calculateTimeBadges(totalSeconds, currentBadgeLevel, existingCompletedB
 // LEGACY / LIFETIME ACHIEVEMENTS HELPERS
 // ---------------------------------------------------------------------------
 
-/**
- * Legacy consecutive run milestones: 30, 60, 90 ... 365
- */
 const LEGACY_RUN_MILESTONES = (() => {
   const m = [];
   for (let i = 30; i <= 365; i += 30) m.push(i);
@@ -193,29 +218,14 @@ const LEGACY_RUN_MILESTONES = (() => {
   return m;
 })();
 
-/**
- * Legacy time milestones: every 30 min up to 10 hours
- * Unlike challenge time badges, ALL earned milestones stay permanently.
- */
 const LEGACY_TIME_MILESTONES = (() => {
   const m = [];
   for (let i = 1800; i <= 36000; i += 1800) m.push(i);
   return m;
 })();
 
-/**
- * Determine how many active challenges exist for today.
- * We count distinct challengeIds with a successful attempt by this user today.
- * Then we count total active challenges the user is enrolled in.
- * If completedToday >= totalActiveEnrolled → all challenges done.
- *
- * Simple approach: caller passes in whether all challenges are done for today.
- * We derive it by checking userChallenges for active enrollments and whether
- * each has a success attempt today.
- */
 async function allActiveChallengesCompletedToday(userId, currentChallengeId) {
   try {
-    // Get all active userChallenge enrollments for this user
     const ucQuery = query(
       collection(db, "userChallenges"),
       where("userId", "==", userId),
@@ -223,21 +233,16 @@ async function allActiveChallengesCompletedToday(userId, currentChallengeId) {
     );
     const ucSnap = await getDocs(ucQuery);
 
-    if (ucSnap.empty) return true; // only 1 challenge, they just completed it
+    if (ucSnap.empty) return true;
 
     const activeChallengeIds = ucSnap.docs.map((d) => d.data().challengeId);
 
-    if (activeChallengeIds.length === 1) return true; // only enrolled in one
+    if (activeChallengeIds.length === 1) return true;
 
-    // For each active challenge, check if there's a successful attempt today
-    // We use the lastSuccessDate from userStats to avoid heavy query load —
-    // but for multi-challenge we need to check each. Keep it simple: query
-    // today's attempts for this user across all active challenges.
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayTs = today.getTime();
 
-    // Check each active challenge for a success attempt today
     for (const cId of activeChallengeIds) {
       const attQ = query(
         collection(db, "attempts"),
@@ -247,7 +252,6 @@ async function allActiveChallengesCompletedToday(userId, currentChallengeId) {
       );
       const attSnap = await getDocs(attQ);
 
-      // Filter to today's attempts in JS (Firestore free tier avoids composite index)
       const todaySuccess = attSnap.docs.some((d) => {
         const ts = d.data().timestamp;
         if (!ts) return false;
@@ -255,36 +259,20 @@ async function allActiveChallengesCompletedToday(userId, currentChallengeId) {
         return ms >= todayTs;
       });
 
-      if (!todaySuccess) return false; // at least one active challenge not done today
+      if (!todaySuccess) return false;
     }
 
     return true;
   } catch (err) {
     console.error("allActiveChallengesCompletedToday error:", err);
-    // Fail safe: don't increment if we can't verify
     return false;
   }
 }
 
-/**
- * Update the legacy (Lifetime Achievements) badge data.
- *
- * Consecutive Run rules:
- * - Increments once per calendar day only when ALL active challenges are completed
- * - No calendar gap penalty between challenges (Option A — true freeze)
- * - Resets to 0 only when a day is missed inside an active challenge
- * - Badge earned at REST (day after they stop), except 365 fires immediately
- * - Previous streak's highest milestone is preserved in earnedConsecutiveRunBadges
- *
- * Legacy Time rules:
- * - Every 30-min milestone of totalPlankSeconds is permanently earned
- * - All earned milestones stay on the wall forever
- */
 async function updateLegacyBadges(userId, movementType, userStatsData) {
   const legacy = getLegacyBadgeData(userStatsData);
   const newlyEarnedLegacyBadges = [];
 
-  // ── Consecutive Run ──────────────────────────────────────────────────────
   const allDone = await allActiveChallengesCompletedToday(userId, null);
 
   let newRun = legacy.consecutiveRun;
@@ -292,7 +280,6 @@ async function updateLegacyBadges(userId, movementType, userStatsData) {
   let earnedRunBadges = [...legacy.earnedConsecutiveRunBadges];
 
   if (allDone) {
-    // Check if we already incremented today (lastSuccessDate guard)
     const lastSuccess = userStatsData.lastSuccessDate;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -309,42 +296,35 @@ async function updateLegacyBadges(userId, movementType, userStatsData) {
     if (!alreadyCountedToday) {
       newRun = legacy.consecutiveRun + 1;
 
-      // Check for immediate 365-day badge
-      if (newRun === 365 && !earnedRunBadges.includes(365)) {
-        earnedRunBadges = [...earnedRunBadges, 365];
+      const runVals = legacyRunValues(earnedRunBadges);
+      if (newRun === 365 && !runVals.includes(365)) {
+        earnedRunBadges = [...earnedRunBadges, { value: 365, challengeId: null }];
         newRunBadgeLevel = 365;
         newlyEarnedLegacyBadges.push({ type: "legacyRun", value: 365 });
       }
 
-      // Track highest mid-run milestone reached (badge awarded at rest)
       for (const milestone of LEGACY_RUN_MILESTONES) {
         if (newRun >= milestone && milestone > newRunBadgeLevel && milestone !== 365) {
           newRunBadgeLevel = milestone;
-          // Don't add to earnedRunBadges yet — awarded at rest
         }
       }
     }
-    // If already counted today, leave newRun as-is (idempotent)
   }
-  // If !allDone — we do NOT decrement here. Streak break is handled at
-  // challenge day-miss time (the missed attempt path). For now just freeze.
 
-  // ── Legacy Time Badges (plank only, all milestones permanent) ─────────────
   let earnedTimeBadges = [...legacy.earnedTimeBadges];
 
   if (movementType === "plank") {
-    // totalPlankSeconds on userStats is already updated before this runs
     const totalSeconds = userStatsData.totalPlankSeconds || 0;
+    const timeVals = legacyTimeValues(earnedTimeBadges);
 
     for (const milestone of LEGACY_TIME_MILESTONES) {
-      if (totalSeconds >= milestone && !earnedTimeBadges.includes(milestone)) {
-        earnedTimeBadges = [...earnedTimeBadges, milestone];
+      if (totalSeconds >= milestone && !timeVals.includes(milestone)) {
+        earnedTimeBadges = [...earnedTimeBadges, { value: milestone, challengeId: null }];
         newlyEarnedLegacyBadges.push({ type: "legacyTime", value: milestone });
       }
     }
   }
 
-  // ── Build the updated legacy object ──────────────────────────────────────
   const updatedLegacy = {
     consecutiveRun: newRun,
     consecutiveRunBadgeLevel: newRunBadgeLevel,
@@ -358,8 +338,9 @@ async function updateLegacyBadges(userId, movementType, userStatsData) {
 /**
  * Call this when a missed/failed day occurs to break the consecutive run.
  * Saves the highest milestone reached during the now-ended run to earnedConsecutiveRunBadges.
+ * challengeId is passed so the badge entry is source-tracked.
  */
-export async function breakConsecutiveRun(userId) {
+export async function breakConsecutiveRun(userId, challengeId = null) {
   try {
     const userStatsRef = doc(db, "userStats", userId);
     const snap = await getDoc(userStatsRef);
@@ -368,13 +349,16 @@ export async function breakConsecutiveRun(userId) {
     const data = snap.data();
     const legacy = getLegacyBadgeData(data);
 
-    // Award the highest milestone badge reached during the run (rest rule)
+    const runVals = legacyRunValues(legacy.earnedConsecutiveRunBadges);
     let earnedRunBadges = [...legacy.earnedConsecutiveRunBadges];
     if (
       legacy.consecutiveRunBadgeLevel > 0 &&
-      !earnedRunBadges.includes(legacy.consecutiveRunBadgeLevel)
+      !runVals.includes(legacy.consecutiveRunBadgeLevel)
     ) {
-      earnedRunBadges = [...earnedRunBadges, legacy.consecutiveRunBadgeLevel];
+      earnedRunBadges = [
+        ...earnedRunBadges,
+        { value: legacy.consecutiveRunBadgeLevel, challengeId: challengeId || null },
+      ];
     }
 
     await updateDoc(userStatsRef, {
@@ -383,10 +367,183 @@ export async function breakConsecutiveRun(userId) {
       "badges.legacy.earnedConsecutiveRunBadges": earnedRunBadges,
       updatedAt: serverTimestamp(),
     });
-
-    console.log("Consecutive run broken. Badge awarded:", legacy.consecutiveRunBadgeLevel);
   } catch (err) {
     console.error("breakConsecutiveRun error:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CHALLENGE-END FINALIZATION
+// ---------------------------------------------------------------------------
+
+/**
+ * Finalizes streak and time badges for ALL users in a challenge when it ends.
+ * Called from AdminPanel (Deactivate, ForceEnd, Reset) and App.js (autoArchive).
+ *
+ * For each enrolled user:
+ *  - If currentStreakBadgeLevel > 0  → move to completedStreakBadges[level] += 1, reset to 0
+ *  - If currentTimeBadgeLevel > 0   → move to completedTimeBadges[level] += 1, reset to 0
+ *  - Snapshots legacyRunAtEnd and legacyTimeBadgeCountAtEnd into userChallenges doc
+ *  - Source-tags legacy badges with this challengeId
+ */
+export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
+  try {
+    const ucQuery = query(
+      collection(db, "userChallenges"),
+      where("challengeId", "==", challengeId)
+    );
+    const ucSnap = await getDocs(ucQuery);
+
+    for (const ucDoc of ucSnap.docs) {
+      const ucData = ucDoc.data();
+      const userId = ucData.userId;
+      if (!userId) continue;
+
+      try {
+        const userStatsRef = doc(db, "userStats", userId);
+        const statsSnap = await getDoc(userStatsRef);
+        if (!statsSnap.exists()) continue;
+
+        const statsData = statsSnap.data();
+        const challengeBadges = getChallengeBadgeData(statsData, challengeId);
+        const legacy = getLegacyBadgeData(statsData);
+
+        const updates = {};
+
+        // ── Finalize streak badge ──────────────────────────────────────────
+        if (challengeBadges.currentStreakBadgeLevel > 0) {
+          const level = challengeBadges.currentStreakBadgeLevel;
+          const updated = { ...challengeBadges.completedStreakBadges };
+          updated[level] = (updated[level] || 0) + 1;
+          updates[`badges.challenges.${challengeId}.completedStreakBadges`] = updated;
+          updates[`badges.challenges.${challengeId}.currentStreakBadgeLevel`] = 0;
+        }
+
+        // ── Finalize time badge ────────────────────────────────────────────
+        if (challengeBadges.currentTimeBadgeLevel > 0) {
+          const level = challengeBadges.currentTimeBadgeLevel;
+          const updatedTime = { ...challengeBadges.completedTimeBadges };
+          updatedTime[level] = (updatedTime[level] || 0) + 1;
+          updates[`badges.challenges.${challengeId}.completedTimeBadges`] = updatedTime;
+          updates[`badges.challenges.${challengeId}.currentTimeBadgeLevel`] = 0;
+        }
+
+        // ── Source-tag any untagged legacy badges with this challengeId ────
+        // (badges earned during this challenge via updateLegacyBadges had challengeId:null
+        //  because the challengeId wasn't threaded through — we tag them here)
+        let legacyRunBadges = legacy.earnedConsecutiveRunBadges.map((item) =>
+          item.challengeId === null
+            ? { ...item, challengeId }
+            : item
+        );
+        let legacyTimeBadges = legacy.earnedTimeBadges.map((item) =>
+          item.challengeId === null
+            ? { ...item, challengeId }
+            : item
+        );
+
+        updates["badges.legacy.earnedConsecutiveRunBadges"] = legacyRunBadges;
+        updates["badges.legacy.earnedTimeBadges"] = legacyTimeBadges;
+        updates["updatedAt"] = serverTimestamp();
+
+        if (Object.keys(updates).length > 1) {
+          await updateDoc(userStatsRef, updates);
+        }
+
+        // ── Snapshot legacy data into userChallenges ───────────────────────
+        const legacyRunAtEnd = legacy.consecutiveRun || 0;
+        const legacyTimeBadgeCountAtEnd = legacy.earnedTimeBadges.length || 0;
+
+        await updateDoc(doc(db, "userChallenges", ucDoc.id), {
+          legacyRunAtEnd,
+          legacyTimeBadgeCountAtEnd,
+        });
+
+      } catch (userErr) {
+        console.error(`finalizeAllStreaksOnChallengeEnd error for user ${userId}:`, userErr);
+        // Non-fatal — continue with next user
+      }
+    }
+
+    console.log(`finalizeAllStreaksOnChallengeEnd complete for challenge ${challengeId}`);
+  } catch (err) {
+    console.error("finalizeAllStreaksOnChallengeEnd error:", err);
+  }
+}
+
+/**
+ * Clears all badge data for a specific challenge from all enrolled users.
+ * Also removes legacy badge entries sourced from this challenge.
+ * Called from AdminPanel confirmReset.
+ */
+export async function clearChallengeBadgesOnReset(challengeId) {
+  try {
+    const ucQuery = query(
+      collection(db, "userChallenges"),
+      where("challengeId", "==", challengeId)
+    );
+    const ucSnap = await getDocs(ucQuery);
+
+    for (const ucDoc of ucSnap.docs) {
+      const ucData = ucDoc.data();
+      const userId = ucData.userId;
+      if (!userId) continue;
+
+      try {
+        const userStatsRef = doc(db, "userStats", userId);
+        const statsSnap = await getDoc(userStatsRef);
+        if (!statsSnap.exists()) continue;
+
+        const statsData = statsSnap.data();
+        const legacy = getLegacyBadgeData(statsData);
+
+        // Remove legacy badges sourced from this challenge
+        const filteredRunBadges = legacy.earnedConsecutiveRunBadges.filter(
+          (item) => item.challengeId !== challengeId
+        );
+        const filteredTimeBadges = legacy.earnedTimeBadges.filter(
+          (item) => item.challengeId !== challengeId
+        );
+
+        // Recalculate consecutiveRunBadgeLevel — highest milestone still in earned list
+        const remainingRunVals = legacyRunValues(filteredRunBadges);
+        const newRunBadgeLevel =
+          remainingRunVals.length > 0 ? Math.max(...remainingRunVals) : 0;
+
+        await updateDoc(userStatsRef, {
+          [`badges.challenges.${challengeId}`]: {
+            currentStreak: 0,
+            currentStreakBadgeLevel: 0,
+            completedStreakBadges: { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
+            doubleBadgeCount: 0,
+            tripleBadgeCount: 0,
+            quadrupleBadgeCount: 0,
+            totalPlankSeconds: 0,
+            currentTimeBadgeLevel: 0,
+            completedTimeBadges: {},
+          },
+          "badges.legacy.earnedConsecutiveRunBadges": filteredRunBadges,
+          "badges.legacy.earnedTimeBadges": filteredTimeBadges,
+          "badges.legacy.consecutiveRunBadgeLevel": newRunBadgeLevel,
+          updatedAt: serverTimestamp(),
+        });
+
+        // Clear snapshots from userChallenges
+        await updateDoc(doc(db, "userChallenges", ucDoc.id), {
+          legacyRunAtEnd: null,
+          legacyTimeBadgeCountAtEnd: null,
+          legacyRunAtJoin: null,
+          legacyTimeBadgeCountAtJoin: null,
+        });
+
+      } catch (userErr) {
+        console.error(`clearChallengeBadgesOnReset error for user ${userId}:`, userErr);
+      }
+    }
+
+    console.log(`clearChallengeBadgesOnReset complete for challenge ${challengeId}`);
+  } catch (err) {
+    console.error("clearChallengeBadgesOnReset error:", err);
   }
 }
 
@@ -394,17 +551,13 @@ export async function breakConsecutiveRun(userId) {
 // MAIN EXPORT
 // ---------------------------------------------------------------------------
 
-/**
- * Main function: Update badges after successful day completion
- * Returns: { newBadges: array of newly earned badges for celebration }
- */
 export async function updateBadgesOnCompletion({
   userId,
   challengeId,
   currentDay,
   actualValue,
   targetValue,
-  movementType, // "plank" or "squat"
+  movementType,
 }) {
   try {
     const userStatsRef = doc(db, "userStats", userId);
@@ -418,7 +571,6 @@ export async function updateBadgesOnCompletion({
     const userStatsData = userStatsSnap.data();
     const currentBadgeData = getChallengeBadgeData(userStatsData, challengeId);
 
-    // ── Challenge streak ────────────────────────────────────────────────────
     const { continues, newStreak } = await calculateStreakContinuation(
       userId,
       challengeId,
@@ -437,13 +589,12 @@ export async function updateBadgesOnCompletion({
       currentBadgeLevel = 0;
     }
 
-    const {
-      newBadgeLevel,
-      completedBadges,
-      newlyEarnedBadge,
-    } = calculateStreakBadges(newStreak, currentBadgeLevel, updatedCompletedBadges);
+    const { newBadgeLevel, completedBadges, newlyEarnedBadge } = calculateStreakBadges(
+      newStreak,
+      currentBadgeLevel,
+      updatedCompletedBadges
+    );
 
-    // ── Multiplier badges ───────────────────────────────────────────────────
     const oldMultipliers = {
       doubleBadgeCount: currentBadgeData.doubleBadgeCount || 0,
       tripleBadgeCount: currentBadgeData.tripleBadgeCount || 0,
@@ -451,7 +602,6 @@ export async function updateBadgesOnCompletion({
     };
     const newMultipliers = calculateMultiplierBadges(actualValue, targetValue, oldMultipliers);
 
-    // ── Challenge time badges (highest only) ────────────────────────────────
     let newTotalPlankSeconds = currentBadgeData.totalPlankSeconds || 0;
     let newTimeBadgeLevel = currentBadgeData.currentTimeBadgeLevel || 0;
     let newCompletedTimeBadges = currentBadgeData.completedTimeBadges || {};
@@ -469,13 +619,12 @@ export async function updateBadgesOnCompletion({
       newlyEarnedTimeBadge = timeBadgeResult.newlyEarnedBadge;
     }
 
-    // ── Legacy / Lifetime Achievements ─────────────────────────────────────
-    // NOTE: totalPlankSeconds on userStatsData is already updated by
-    // updatePlankStatsOnSuccess before this function is called.
-    const { updatedLegacy, newlyEarnedLegacyBadges } =
-      await updateLegacyBadges(userId, movementType, userStatsData);
+    const { updatedLegacy, newlyEarnedLegacyBadges } = await updateLegacyBadges(
+      userId,
+      movementType,
+      userStatsData
+    );
 
-    // ── Build newBadges list for celebration ────────────────────────────────
     const newBadges = [];
 
     if (newlyEarnedBadge) {
@@ -494,10 +643,8 @@ export async function updateBadgesOnCompletion({
       newBadges.push({ type: "time", value: newlyEarnedTimeBadge });
     }
 
-    // Add legacy badges to celebration
     newBadges.push(...newlyEarnedLegacyBadges);
 
-    // ── Write to Firestore ──────────────────────────────────────────────────
     const updatedBadgeData = {
       currentStreak: newStreak,
       currentStreakBadgeLevel: newBadgeLevel,
@@ -517,15 +664,6 @@ export async function updateBadgesOnCompletion({
       updatedAt: serverTimestamp(),
     });
 
-    console.log("Badges updated:", {
-      challengeId,
-      newStreak,
-      consecutiveRun: updatedLegacy.consecutiveRun,
-      newTimeBadgeLevel,
-      legacyTimeBadges: updatedLegacy.earnedTimeBadges.length,
-      newBadges: newBadges.length,
-    });
-
     return { newBadges, badgeData: updatedBadgeData, legacyData: updatedLegacy };
   } catch (error) {
     console.error("Error updating badges:", error);
@@ -533,9 +671,6 @@ export async function updateBadgesOnCompletion({
   }
 }
 
-/**
- * Get all badges for a user across all challenges (for Profile total display)
- */
 export async function getAllUserBadges(userId) {
   try {
     const userStatsRef = doc(db, "userStats", userId);
@@ -599,9 +734,6 @@ export async function getAllUserBadges(userId) {
   }
 }
 
-/**
- * Get badge data for a specific challenge (for Active tab display)
- */
 export async function getChallengeBadges(userId, challengeId) {
   try {
     const userStatsRef = doc(db, "userStats", userId);
@@ -619,9 +751,6 @@ export async function getChallengeBadges(userId, challengeId) {
   }
 }
 
-/**
- * Get legacy badge data for a user (for Profile Lifetime Achievements display)
- */
 export async function getLegacyBadges(userId) {
   try {
     const userStatsRef = doc(db, "userStats", userId);

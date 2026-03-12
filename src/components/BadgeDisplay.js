@@ -1,11 +1,6 @@
 // src/components/BadgeDisplay.js
 import React from "react";
 
-/**
- * Badge display component - Progressive reveal with left-to-right fill
- * Shows only the NEXT badge to earn, with completed badges below
- * (Existing challenge badge display — unchanged)
- */
 export default function BadgeDisplay({
   currentStreak = 0,
   currentStreakBadgeLevel = 0,
@@ -67,7 +62,6 @@ export default function BadgeDisplay({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "12px" : "16px" }}>
-      {/* Streak Progress */}
       {nextStreakMilestone && (
         <div>
           <div style={{ fontSize: compact ? "12px" : "13px", fontWeight: "600", marginBottom: "8px", color: "var(--color-text-secondary)" }}>
@@ -87,7 +81,6 @@ export default function BadgeDisplay({
         </div>
       )}
 
-      {/* Completed Streak Badges */}
       {hasCompletedBadges && (
         <div>
           <div style={{ fontSize: compact ? "12px" : "13px", fontWeight: "600", marginBottom: "8px", color: "var(--color-text-secondary)" }}>
@@ -107,7 +100,6 @@ export default function BadgeDisplay({
         </div>
       )}
 
-      {/* Performance Badges */}
       <div>
         <div style={{ fontSize: compact ? "12px" : "13px", fontWeight: "600", marginBottom: "8px", color: "var(--color-text-secondary)" }}>
           💪 Performance Badges
@@ -136,7 +128,6 @@ export default function BadgeDisplay({
         </div>
       </div>
 
-      {/* Time Badges (Plank only) */}
       {totalPlankSeconds > 0 && (
         <div>
           <div style={{ fontSize: compact ? "12px" : "13px", fontWeight: "600", marginBottom: "8px", color: "var(--color-text-secondary)" }}>
@@ -181,9 +172,6 @@ export default function BadgeDisplay({
 // LIFETIME ACHIEVEMENTS BADGE DISPLAY
 // ---------------------------------------------------------------------------
 
-/**
- * Formats seconds into a readable time string
- */
 function formatLegacyTime(seconds) {
   const hours = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
@@ -194,10 +182,6 @@ function formatLegacyTime(seconds) {
   return `${mins}m`;
 }
 
-/**
- * Trophy card for a single earned legacy milestone.
- * Large centered number, gold gradient, permanent on the achievement wall.
- */
 function TrophyCard({ label, sublabel, color = "#eab308", bgColor = "#fef9c3", borderColor = "#eab308", emoji = "🏆" }) {
   return (
     <div
@@ -216,29 +200,11 @@ function TrophyCard({ label, sublabel, color = "#eab308", bgColor = "#fef9c3", b
       }}
     >
       <div style={{ fontSize: "22px", lineHeight: 1, marginBottom: "4px" }}>{emoji}</div>
-      <div
-        style={{
-          fontSize: "26px",
-          fontWeight: "900",
-          color: color,
-          lineHeight: 1,
-          letterSpacing: "-0.5px",
-        }}
-      >
+      <div style={{ fontSize: "26px", fontWeight: "900", color: color, lineHeight: 1, letterSpacing: "-0.5px" }}>
         {label}
       </div>
       {sublabel && (
-        <div
-          style={{
-            fontSize: "11px",
-            fontWeight: "600",
-            color: color,
-            opacity: 0.8,
-            marginTop: "3px",
-            textAlign: "center",
-            lineHeight: 1.2,
-          }}
-        >
+        <div style={{ fontSize: "11px", fontWeight: "600", color: color, opacity: 0.8, marginTop: "3px", textAlign: "center", lineHeight: 1.2 }}>
           {sublabel}
         </div>
       )}
@@ -248,13 +214,8 @@ function TrophyCard({ label, sublabel, color = "#eab308", bgColor = "#fef9c3", b
 
 /**
  * LegacyBadgeDisplay — Lifetime Achievements card content.
- *
- * Props:
- *   consecutiveRun          {number}  current live count (frozen between challenges)
- *   consecutiveRunBadgeLevel{number}  highest milestone reached mid-run (not yet awarded)
- *   earnedConsecutiveRunBadges {number[]} milestones awarded at rest [30, 60, ...]
- *   earnedTimeBadges        {number[]} all 30-min plank time milestones earned [1800, 3600, ...]
- *   totalPlankSeconds       {number}  lifetime total plank seconds (from userStats)
+ * earnedConsecutiveRunBadges and earnedTimeBadges are now {value, challengeId}[] objects.
+ * We read .value for display; the raw number fallback handles old data gracefully.
  */
 export function LegacyBadgeDisplay({
   consecutiveRun = 0,
@@ -263,7 +224,6 @@ export function LegacyBadgeDisplay({
   earnedTimeBadges = [],
   totalPlankSeconds = 0,
 }) {
-  // Next consecutive run milestone
   const RUN_MILESTONES = (() => {
     const m = [];
     for (let i = 30; i <= 365; i += 30) m.push(i);
@@ -277,51 +237,46 @@ export function LegacyBadgeDisplay({
     return m;
   })();
 
-  const nextRunMilestone = RUN_MILESTONES.find((m) => consecutiveRun < m) || null;
-  const nextTimeMilestone = TIME_MILESTONES.find((m) => !earnedTimeBadges.includes(m)) || null;
+  // Extract numeric values regardless of old (number) or new ({value,challengeId}) schema
+  const runValues = earnedConsecutiveRunBadges.map((item) =>
+    typeof item === "object" ? item.value : item
+  );
+  const timeValues = earnedTimeBadges.map((item) =>
+    typeof item === "object" ? item.value : item
+  );
 
-  const hasEarnedRunBadges = earnedConsecutiveRunBadges.length > 0;
-  const hasEarnedTimeBadges = earnedTimeBadges.length > 0;
+  const nextRunMilestone = RUN_MILESTONES.find((m) => consecutiveRun < m) || null;
+  const nextTimeMilestone = TIME_MILESTONES.find((m) => !timeValues.includes(m)) || null;
+
+  const hasEarnedRunBadges = runValues.length > 0;
+  const hasEarnedTimeBadges = timeValues.length > 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
-      {/* ── Best Consecutive Run ───────────────────────────────────── */}
+      {/* Best Consecutive Run */}
       <div>
         <div style={{ fontSize: "13px", fontWeight: "700", marginBottom: "10px", color: "#92400e", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           🔥 Best Consecutive Run
         </div>
 
-        {/* Live counter */}
         <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginBottom: "12px" }}>
           <span style={{ fontSize: "40px", fontWeight: "900", color: "#eab308", lineHeight: 1 }}>
             {consecutiveRun}
           </span>
           <span style={{ fontSize: "16px", fontWeight: "600", color: "#92400e" }}>days</span>
           {consecutiveRun > 0 && (
-            <span style={{ fontSize: "13px", color: "#a16207", marginLeft: "4px" }}>
-              🔥 running
-            </span>
+            <span style={{ fontSize: "13px", color: "#a16207", marginLeft: "4px" }}>🔥 running</span>
           )}
         </div>
 
-        {/* Progress bar toward next milestone */}
         {nextRunMilestone && (
           <div style={{ marginBottom: "14px" }}>
             <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#92400e" }}>
               Next trophy: {nextRunMilestone} days
             </div>
             <div style={{ position: "relative", width: "100%", height: "36px", backgroundColor: "#fef3c7", borderRadius: "8px", overflow: "hidden", border: "2px solid #fde68a" }}>
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0, left: 0,
-                  height: "100%",
-                  width: `${Math.min((consecutiveRun / nextRunMilestone) * 100, 100)}%`,
-                  background: "linear-gradient(90deg, #fbbf24, #eab308)",
-                  transition: "width 0.5s ease",
-                }}
-              />
+              <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${Math.min((consecutiveRun / nextRunMilestone) * 100, 100)}%`, background: "linear-gradient(90deg, #fbbf24, #eab308)", transition: "width 0.5s ease" }} />
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: "#78350f", textShadow: "0 1px 2px rgba(255,255,255,0.7)" }}>
                 {consecutiveRun}/{nextRunMilestone} days
               </div>
@@ -329,22 +284,11 @@ export function LegacyBadgeDisplay({
           </div>
         )}
 
-        {/* Earned trophies wall */}
         {hasEarnedRunBadges ? (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-            {[...earnedConsecutiveRunBadges]
-              .sort((a, b) => b - a)
-              .map((milestone) => (
-                <TrophyCard
-                  key={milestone}
-                  emoji="🏆"
-                  label={`${milestone}`}
-                  sublabel="days"
-                  color="#92400e"
-                  bgColor="#fef3c7"
-                  borderColor="#eab308"
-                />
-              ))}
+            {[...runValues].sort((a, b) => b - a).map((milestone) => (
+              <TrophyCard key={milestone} emoji="🏆" label={`${milestone}`} sublabel="days" color="#92400e" bgColor="#fef3c7" borderColor="#eab308" />
+            ))}
           </div>
         ) : (
           <div style={{ fontSize: "13px", color: "#a16207", fontStyle: "italic" }}>
@@ -353,13 +297,12 @@ export function LegacyBadgeDisplay({
         )}
       </div>
 
-      {/* ── Lifetime Plank Time ────────────────────────────────────── */}
+      {/* Lifetime Plank Time */}
       <div>
         <div style={{ fontSize: "13px", fontWeight: "700", marginBottom: "10px", color: "#065f46", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           ⏱️ Lifetime Plank Time
         </div>
 
-        {/* Total time display */}
         <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginBottom: "12px" }}>
           <span style={{ fontSize: "32px", fontWeight: "900", color: "#059669", lineHeight: 1 }}>
             {formatLegacyTime(totalPlankSeconds)}
@@ -367,18 +310,14 @@ export function LegacyBadgeDisplay({
           <span style={{ fontSize: "13px", color: "#065f46" }}>total</span>
         </div>
 
-        {/* Progress bar toward next time milestone */}
         {nextTimeMilestone && (
           <div style={{ marginBottom: "14px" }}>
             <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#065f46" }}>
               Next trophy: {formatLegacyTime(nextTimeMilestone)}
             </div>
             <div style={{ position: "relative", width: "100%", height: "36px", backgroundColor: "#d1fae5", borderRadius: "8px", overflow: "hidden", border: "2px solid #a7f3d0" }}>
-              {/* base from last earned milestone */}
               {(() => {
-                const lastEarned = earnedTimeBadges.length > 0
-                  ? Math.max(...earnedTimeBadges)
-                  : 0;
+                const lastEarned = timeValues.length > 0 ? Math.max(...timeValues) : 0;
                 const rangeStart = lastEarned;
                 const rangeEnd = nextTimeMilestone;
                 const progress = Math.min(
@@ -398,22 +337,11 @@ export function LegacyBadgeDisplay({
           </div>
         )}
 
-        {/* Earned time trophies wall — ALL milestones stay permanently */}
         {hasEarnedTimeBadges ? (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-            {[...earnedTimeBadges]
-              .sort((a, b) => b - a)
-              .map((milestone) => (
-                <TrophyCard
-                  key={milestone}
-                  emoji="⏱️"
-                  label={formatLegacyTime(milestone)}
-                  sublabel="plank"
-                  color="#064e3b"
-                  bgColor="#d1fae5"
-                  borderColor="#34d399"
-                />
-              ))}
+            {[...timeValues].sort((a, b) => b - a).map((milestone) => (
+              <TrophyCard key={milestone} emoji="⏱️" label={formatLegacyTime(milestone)} sublabel="plank" color="#064e3b" bgColor="#d1fae5" borderColor="#34d399" />
+            ))}
           </div>
         ) : (
           <div style={{ fontSize: "13px", color: "#059669", fontStyle: "italic" }}>
