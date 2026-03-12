@@ -17,6 +17,10 @@ import {
 import { getPhoenixDate } from "../utils";
 import TeamManagement from "./TeamManagement";
 import CompletedChallenges from "./CompletedChallenges";
+import {
+  finalizeAllStreaksOnChallengeEnd,
+  clearChallengeBadgesOnReset,
+} from "../badgeHelpers";
 
 export default function AdminPanel({ user }) {
   const [activeAdminTab, setActiveAdminTab] = useState("challenges");
@@ -29,12 +33,10 @@ export default function AdminPanel({ user }) {
   const [missedLoading, setMissedLoading] = useState(false);
   const [missedByDay, setMissedByDay] = useState({});
 
-  // Admin email must match your real email exactly
   const ADMIN_EMAIL = "chadrnlmt@gmail.com";
   const isAdmin = user?.email === ADMIN_EMAIL;
   console.log("ADMIN CHECK", user?.email, ADMIN_EMAIL, isAdmin);
 
-  // Initial form state - NOW includes isTeamChallenge
   const defaultFormState = {
     name: "",
     description: "",
@@ -49,14 +51,12 @@ export default function AdminPanel({ user }) {
 
   const [formData, setFormData] = useState(defaultFormState);
 
-  // Helper: convert YYYY-MM-DD string to a Date at local midnight
   function dateFromYMD(ymd) {
     if (!ymd) return null;
     const [year, month, day] = ymd.split("-").map((v) => parseInt(v, 10));
     return new Date(year, month - 1, day, 0, 0, 0, 0);
   }
 
-  // Load challenges from Firestore
   useEffect(() => {
     if (isAdmin) {
       loadChallenges();
@@ -75,8 +75,6 @@ export default function AdminPanel({ user }) {
 
       for (const docSnap of snapshot.docs) {
         const challengeData = docSnap.data();
-
-        // Get user count for this challenge
         const userCountQuery = query(
           collection(db, "userChallenges"),
           where("challengeId", "==", docSnap.id)
@@ -91,7 +89,6 @@ export default function AdminPanel({ user }) {
         });
       }
 
-      // Sort: active first, then by createdAt descending
       data.sort((a, b) => {
         if (a.isActive !== b.isActive) {
           return (b.isActive ? 1 : 0) - (a.isActive ? 1 : 0);
@@ -183,10 +180,8 @@ export default function AdminPanel({ user }) {
     }
   };
 
-  // NEW: Archive leaderboard before deactivating
   const archiveLeaderboardBeforeDeactivate = async (challenge) => {
     try {
-      // Check if challenge has any participants
       const statsQuery = query(
         collection(db, "challengeUserStats"),
         where("challengeId", "==", challenge.id)
@@ -195,10 +190,9 @@ export default function AdminPanel({ user }) {
 
       if (statsSnapshot.empty) {
         console.log("No participants, skipping archive");
-        return true; // Continue with deactivation
+        return true;
       }
 
-      // Check if already archived
       const existingArchiveQuery = query(
         collection(db, "leaderboardHistory"),
         where("challengeId", "==", challenge.id)
@@ -207,10 +201,9 @@ export default function AdminPanel({ user }) {
 
       if (!existingArchiveSnapshot.empty) {
         console.log("Already archived, skipping duplicate");
-        return true; // Continue with deactivation
+        return true;
       }
 
-      // Load teams for team challenge
       const teamsQuery = query(collection(db, "teams"));
       const teamsSnapshot = await getDocs(teamsQuery);
       const teams = teamsSnapshot.docs.map(doc => ({
@@ -218,7 +211,6 @@ export default function AdminPanel({ user }) {
         ...doc.data()
       }));
 
-      // Get all user stats
       const entries = statsSnapshot.docs.map(docSnap => {
         const data = docSnap.data();
         return {
@@ -236,56 +228,36 @@ export default function AdminPanel({ user }) {
 
       const isPlank = challenge.type === "plank";
 
-      // Sorting functions
       const compareTotals = (a, b) => {
         const aVal = isPlank ? a.totalSeconds : a.totalReps;
         const bVal = isPlank ? b.totalSeconds : b.totalReps;
         if (bVal !== aVal) return bVal - aVal;
-        
         const aTime = a.firstAchievedAt?.toMillis ? a.firstAchievedAt.toMillis() : null;
         const bTime = b.firstAchievedAt?.toMillis ? b.firstAchievedAt.toMillis() : null;
         if (aTime && bTime && aTime !== bTime) return aTime - bTime;
-        
-        const nameA = (a.displayName || "").toLowerCase();
-        const nameB = (b.displayName || "").toLowerCase();
-        if (nameA < nameB) return -1;
-        if (nameA > nameB) return 1;
-        return 0;
+        return (a.displayName || "").toLowerCase() < (b.displayName || "").toLowerCase() ? -1 : 1;
       };
 
       const compareBests = (a, b) => {
         const aVal = isPlank ? a.bestSeconds : a.bestReps;
         const bVal = isPlank ? b.bestSeconds : b.bestReps;
         if (bVal !== aVal) return bVal - aVal;
-        
         const aTime = a.firstAchievedAt?.toMillis ? a.firstAchievedAt.toMillis() : null;
         const bTime = b.firstAchievedAt?.toMillis ? b.firstAchievedAt.toMillis() : null;
         if (aTime && bTime && aTime !== bTime) return aTime - bTime;
-        
-        const nameA = (a.displayName || "").toLowerCase();
-        const nameB = (b.displayName || "").toLowerCase();
-        if (nameA < nameB) return -1;
-        if (nameA > nameB) return 1;
-        return 0;
+        return (a.displayName || "").toLowerCase() < (b.displayName || "").toLowerCase() ? -1 : 1;
       };
 
-      // Get top 10 by total and top 5 by best
       const topTotal = [...entries].sort(compareTotals).slice(0, 10);
       const topBest = [...entries].sort(compareBests).slice(0, 5);
 
-      // Calculate team standings if team challenge
       let teamStandings = [];
       if (challenge.isTeamChallenge) {
         const teamTotals = {};
         entries.forEach(row => {
           if (row.teamId) {
             if (!teamTotals[row.teamId]) {
-              teamTotals[row.teamId] = {
-                teamId: row.teamId,
-                totalSeconds: 0,
-                totalReps: 0,
-                memberCount: 0,
-              };
+              teamTotals[row.teamId] = { teamId: row.teamId, totalSeconds: 0, totalReps: 0, memberCount: 0 };
             }
             teamTotals[row.teamId].totalSeconds += row.totalSeconds || 0;
             teamTotals[row.teamId].totalReps += row.totalReps || 0;
@@ -305,12 +277,10 @@ export default function AdminPanel({ user }) {
         });
       }
 
-      // Calculate end date
       const startDate = challenge.startDate?.toDate ? challenge.startDate.toDate() : new Date(challenge.startDate);
       const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + challenge.numberOfDays - 1);
 
-      // Create archive document
       await addDoc(collection(db, "leaderboardHistory"), {
         challengeId: challenge.id,
         challengeName: challenge.name,
@@ -347,18 +317,15 @@ export default function AdminPanel({ user }) {
 
   const confirmDeactivate = async (challengeId, challenge) => {
     try {
-      // Archive leaderboard before deactivating if challenge is currently active
       if (challenge.isActive) {
+        // Finalize streak/time badges for all users before archiving
+        await finalizeAllStreaksOnChallengeEnd(challengeId);
         const archiveSuccess = await archiveLeaderboardBeforeDeactivate(challenge);
-        if (!archiveSuccess) {
-          return; // Cancel deactivation if archive failed
-        }
+        if (!archiveSuccess) return;
       }
 
-      // Now deactivate the challenge
-      const newStatus = !challenge.isActive;
       await updateDoc(doc(db, "challenges", challengeId), {
-        isActive: newStatus,
+        isActive: !challenge.isActive,
       });
 
       setConfirmAction(null);
@@ -369,7 +336,6 @@ export default function AdminPanel({ user }) {
     }
   };
 
-  // NEW: Force End Challenge
   const handleForceEnd = (challenge) => {
     setConfirmAction({
       type: "forceEnd",
@@ -387,7 +353,6 @@ export default function AdminPanel({ user }) {
     }
 
     try {
-      // Get all userChallenges for this challenge
       const userChallengesQuery = query(
         collection(db, "userChallenges"),
         where("challengeId", "==", challengeId)
@@ -397,17 +362,14 @@ export default function AdminPanel({ user }) {
       const nowTs = Timestamp.fromDate(getPhoenixDate());
       const numberOfDays = challenge.numberOfDays;
 
-      // Process each user
       for (const docSnap of userChallengesSnapshot.docs) {
         const userChallengeData = docSnap.data();
         const lastCompletedDay = userChallengeData.lastCompletedDay || 0;
         const userId = userChallengeData.userId;
         const displayName = userChallengeData.displayName || null;
 
-        // Create missed attempts for all remaining days
         const attemptsRef = collection(db, "attempts");
         for (let d = lastCompletedDay + 1; d <= numberOfDays; d++) {
-          // Check if missed attempt already exists
           const existingMissedQuery = query(
             attemptsRef,
             where("userId", "==", userId),
@@ -433,10 +395,8 @@ export default function AdminPanel({ user }) {
           }
         }
 
-        // Calculate total missed days
         const missedCount = numberOfDays - lastCompletedDay;
 
-        // Update userChallenge to completed
         await updateDoc(doc(db, "userChallenges", docSnap.id), {
           status: "completed",
           currentDay: numberOfDays + 1,
@@ -444,10 +404,10 @@ export default function AdminPanel({ user }) {
         });
       }
 
-      // Archive leaderboard
+      // Finalize badges before archiving
+      await finalizeAllStreaksOnChallengeEnd(challengeId);
       await archiveLeaderboardBeforeDeactivate(challenge);
 
-      // Deactivate the challenge
       await updateDoc(doc(db, "challenges", challengeId), {
         isActive: false,
       });
@@ -472,10 +432,8 @@ export default function AdminPanel({ user }) {
 
   const confirmDelete = async (challengeId) => {
     try {
-      // Delete challenge
       await deleteDoc(doc(db, "challenges", challengeId));
 
-      // Delete all userChallenges for this challenge
       const userChallengesQuery = query(
         collection(db, "userChallenges"),
         where("challengeId", "==", challengeId)
@@ -485,7 +443,6 @@ export default function AdminPanel({ user }) {
       userChallengesSnapshot.forEach((docSnap) => batch.delete(docSnap.ref));
       await batch.commit();
 
-      // Delete all attempts for this challenge
       const attemptsQuery = query(
         collection(db, "attempts"),
         where("challengeId", "==", challengeId)
@@ -495,7 +452,6 @@ export default function AdminPanel({ user }) {
       attemptsSnapshot.forEach((docSnap) => batch2.delete(docSnap.ref));
       await batch2.commit();
 
-      // Delete all challengeUserStats for this challenge (leaderboard data)
       const statsQuery = query(
         collection(db, "challengeUserStats"),
         where("challengeId", "==", challengeId)
@@ -530,6 +486,9 @@ export default function AdminPanel({ user }) {
     }
 
     try {
+      // Clear all badge data for this challenge (including legacy badges sourced from it)
+      await clearChallengeBadgesOnReset(challengeId);
+
       const userChallengesQuery = query(
         collection(db, "userChallenges"),
         where("challengeId", "==", challengeId)
@@ -580,19 +539,13 @@ export default function AdminPanel({ user }) {
     let formattedDate;
     try {
       if (challenge.startDate?.toDate) {
-        formattedDate = challenge.startDate
-          .toDate()
-          .toISOString()
-          .split("T")[0];
+        formattedDate = challenge.startDate.toDate().toISOString().split("T")[0];
       } else if (challenge.startDate) {
-        formattedDate = new Date(challenge.startDate)
-          .toISOString()
-          .split("T")[0];
+        formattedDate = new Date(challenge.startDate).toISOString().split("T")[0];
       } else {
         formattedDate = new Date().toISOString().split("T")[0];
       }
     } catch (e) {
-      console.error("Date conversion error:", e);
       formattedDate = new Date().toISOString().split("T")[0];
     }
 
@@ -622,7 +575,6 @@ export default function AdminPanel({ user }) {
         const d = data.day;
         const userId = data.userId || "Unknown";
         const displayName = data.displayName || data.userId || "Unknown";
-
         if (!byDay[d]) byDay[d] = [];
         byDay[d].push({ userId, displayName });
       });
@@ -638,102 +590,36 @@ export default function AdminPanel({ user }) {
 
   if (!isAdmin) {
     return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "100vh",
-          padding: "20px",
-          backgroundColor: "#f5f5f5",
-        }}
-      >
-        <h1 style={{ color: "#d32f2f", marginBottom: "10px" }}>
-          Access Denied
-        </h1>
-        <p style={{ color: "#666", fontSize: "16px" }}>
-          This area is restricted to administrators only.
-        </p>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "20px", backgroundColor: "#f5f5f5" }}>
+        <h1 style={{ color: "#d32f2f", marginBottom: "10px" }}>Access Denied</h1>
+        <p style={{ color: "#666", fontSize: "16px" }}>This area is restricted to administrators only.</p>
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        paddingBottom: "100px",
-        backgroundColor: "#f5f5f5",
-      }}
-    >
+    <div style={{ padding: "20px", paddingBottom: "100px", backgroundColor: "#f5f5f5" }}>
       <h1>Admin Panel</h1>
 
-      <div
-        style={{
-          display: "flex",
-          gap: "10px",
-          marginBottom: "20px",
-          borderBottom: "2px solid #ddd",
-        }}
-      >
-        <button
-          onClick={() => setActiveAdminTab("challenges")}
-          style={{
-            padding: "12px 24px",
-            fontSize: "16px",
-            backgroundColor:
-              activeAdminTab === "challenges" ? "#4CAF50" : "transparent",
-            color: activeAdminTab === "challenges" ? "white" : "#666",
-            border: "none",
-            borderBottom:
-              activeAdminTab === "challenges"
-                ? "3px solid #4CAF50"
-                : "3px solid transparent",
-            cursor: "pointer",
-            fontWeight: activeAdminTab === "challenges" ? "bold" : "normal",
-          }}
-        >
-          Challenges
-        </button>
-        <button
-          onClick={() => setActiveAdminTab("teams")}
-          style={{
-            padding: "12px 24px",
-            fontSize: "16px",
-            backgroundColor:
-              activeAdminTab === "teams" ? "#4CAF50" : "transparent",
-            color: activeAdminTab === "teams" ? "white" : "#666",
-            border: "none",
-            borderBottom:
-              activeAdminTab === "teams"
-                ? "3px solid #4CAF50"
-                : "3px solid transparent",
-            cursor: "pointer",
-            fontWeight: activeAdminTab === "teams" ? "bold" : "normal",
-          }}
-        >
-          Teams
-        </button>
-        <button
-          onClick={() => setActiveAdminTab("completed")}
-          style={{
-            padding: "12px 24px",
-            fontSize: "16px",
-            backgroundColor:
-              activeAdminTab === "completed" ? "#4CAF50" : "transparent",
-            color: activeAdminTab === "completed" ? "white" : "#666",
-            border: "none",
-            borderBottom:
-              activeAdminTab === "completed"
-                ? "3px solid #4CAF50"
-                : "3px solid transparent",
-            cursor: "pointer",
-            fontWeight: activeAdminTab === "completed" ? "bold" : "normal",
-          }}
-        >
-          Completed Challenges
-        </button>
+      <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "2px solid #ddd" }}>
+        {["challenges", "teams", "completed"].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveAdminTab(tab)}
+            style={{
+              padding: "12px 24px",
+              fontSize: "16px",
+              backgroundColor: activeAdminTab === tab ? "#4CAF50" : "transparent",
+              color: activeAdminTab === tab ? "white" : "#666",
+              border: "none",
+              borderBottom: activeAdminTab === tab ? "3px solid #4CAF50" : "3px solid transparent",
+              cursor: "pointer",
+              fontWeight: activeAdminTab === tab ? "bold" : "normal",
+            }}
+          >
+            {tab === "challenges" ? "Challenges" : tab === "teams" ? "Teams" : "Completed Challenges"}
+          </button>
+        ))}
       </div>
 
       {activeAdminTab === "teams" ? (
@@ -744,584 +630,120 @@ export default function AdminPanel({ user }) {
         <>
           <button
             onClick={() => setShowCreateForm(!showCreateForm)}
-            style={{
-              padding: "12px 20px",
-              fontSize: "16px",
-              backgroundColor: "#4CAF50",
-              color: "white",
-              border: "none",
-              borderRadius: "5px",
-              cursor: "pointer",
-              marginBottom: "20px",
-            }}
+            style={{ padding: "12px 20px", fontSize: "16px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "5px", cursor: "pointer", marginBottom: "20px" }}
           >
             {showCreateForm ? "Cancel" : "+ Create New Challenge"}
           </button>
 
           {showCreateForm && (
-            <div
-              style={{
-                backgroundColor: "white",
-                padding: "20px",
-                borderRadius: "8px",
-                marginBottom: "20px",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-              }}
-            >
+            <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
               <h2>Create New Challenge</h2>
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: "15px" }}
-              >
+              <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+                {/* Name */}
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: "bold",
-                      marginBottom: "5px",
-                    }}
-                  >
-                    Challenge Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                    placeholder="e.g., Plank Challenge #3"
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "5px",
-                      border: "1px solid #ddd",
-                    }}
-                  />
+                  <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Challenge Name *</label>
+                  <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g., Plank Challenge #3" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                 </div>
-
+                {/* Description */}
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: "bold",
-                      marginBottom: "5px",
-                    }}
-                  >
-                    Description *
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
-                    }
-                    placeholder="e.g., Hold a plank position for increasing durations"
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "5px",
-                      border: "1px solid #ddd",
-                      minHeight: "80px",
-                    }}
-                  />
+                  <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Description *</label>
+                  <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="e.g., Hold a plank position for increasing durations" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd", minHeight: "80px" }} />
                 </div>
-
+                {/* Type */}
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: "bold",
-                      marginBottom: "5px",
-                    }}
-                  >
-                    Type
-                  </label>
-                  <select
-                    value={formData.type}
-                    onChange={(e) =>
-                      setFormData({ ...formData, type: e.target.value })
-                    }
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "5px",
-                      border: "1px solid #ddd",
-                    }}
-                  >
+                  <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Type</label>
+                  <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }}>
                     <option value="plank">Plank (seconds)</option>
                     <option value="squat">Squat (reps)</option>
                   </select>
                 </div>
-
+                {/* Start Date */}
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: "bold",
-                      marginBottom: "5px",
-                    }}
-                  >
-                    Start Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.startDate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, startDate: e.target.value })
-                    }
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "5px",
-                      border: "1px solid #ddd",
-                    }}
-                  />
+                  <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Start Date *</label>
+                  <input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                 </div>
-
+                {/* Number of Days */}
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: "bold",
-                      marginBottom: "5px",
-                    }}
-                  >
-                    Number of Days
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.numberOfDays}
-                    onChange={(e) =>
-                      setFormData({ ...formData, numberOfDays: e.target.value })
-                    }
-                    min="1"
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "5px",
-                      border: "1px solid #ddd",
-                    }}
-                  />
+                  <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Number of Days</label>
+                  <input type="number" value={formData.numberOfDays} onChange={(e) => setFormData({ ...formData, numberOfDays: e.target.value })} min="1" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                 </div>
-
+                {/* Starting Value */}
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: "bold",
-                      marginBottom: "5px",
-                    }}
-                  >
-                    Starting Value ({formData.type === "plank" ? "seconds" : "reps"}
-                    )
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.startingValue}
-                    onChange={(e) =>
-                      setFormData({ ...formData, startingValue: e.target.value })
-                    }
-                    min="1"
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "5px",
-                      border: "1px solid #ddd",
-                    }}
-                  />
+                  <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Starting Value ({formData.type === "plank" ? "seconds" : "reps"})</label>
+                  <input type="number" value={formData.startingValue} onChange={(e) => setFormData({ ...formData, startingValue: e.target.value })} min="1" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                 </div>
-
+                {/* Increment */}
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: "bold",
-                      marginBottom: "5px",
-                    }}
-                  >
-                    Increment Per Day
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.incrementPerDay}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        incrementPerDay: e.target.value,
-                      })
-                    }
-                    min="0"
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "5px",
-                      border: "1px solid #ddd",
-                    }}
-                  />
+                  <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Increment Per Day</label>
+                  <input type="number" value={formData.incrementPerDay} onChange={(e) => setFormData({ ...formData, incrementPerDay: e.target.value })} min="0" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                 </div>
-
+                {/* Active */}
                 <div>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={formData.isActive}
-                      onChange={(e) =>
-                        setFormData({ ...formData, isActive: e.target.checked })
-                      }
-                    />
-                    <span style={{ fontWeight: "bold" }}>
-                      Active (visible to users)
-                    </span>
+                  <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <input type="checkbox" checked={formData.isActive} onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })} />
+                    <span style={{ fontWeight: "bold" }}>Active (visible to users)</span>
                   </label>
                 </div>
-
+                {/* Team Challenge */}
                 <div>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={formData.isTeamChallenge}
-                      onChange={(e) =>
-                        setFormData({ ...formData, isTeamChallenge: e.target.checked })
-                      }
-                    />
-                    <span style={{ fontWeight: "bold" }}>
-                      Team Challenge (requires team selection)
-                    </span>
+                  <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <input type="checkbox" checked={formData.isTeamChallenge} onChange={(e) => setFormData({ ...formData, isTeamChallenge: e.target.checked })} />
+                    <span style={{ fontWeight: "bold" }}>Team Challenge (requires team selection)</span>
                   </label>
-                  <p style={{ marginLeft: "34px", fontSize: "12px", color: "#666", marginTop: "4px" }}>
-                    When enabled, users must select a team when joining this challenge.
-                  </p>
+                  <p style={{ marginLeft: "34px", fontSize: "12px", color: "#666", marginTop: "4px" }}>When enabled, users must select a team when joining this challenge.</p>
                 </div>
-
                 <div>
-                  <button
-                    onClick={handleCreateChallenge}
-                    style={{
-                      padding: "12px",
-                      fontSize: "16px",
-                      backgroundColor: "#4CAF50",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "5px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Create Challenge
-                  </button>
+                  <button onClick={handleCreateChallenge} style={{ padding: "12px", fontSize: "16px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>Create Challenge</button>
                 </div>
               </div>
             </div>
           )}
 
           {editingChallenge && (
-            <div
-              style={{
-                position: "fixed",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: "rgba(0,0,0,0.7)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                zIndex: 1000,
-                padding: "20px",
-              }}
-            >
-              <div
-                style={{
-                  backgroundColor: "white",
-                  padding: "30px",
-                  borderRadius: "8px",
-                  maxHeight: "90vh",
-                  overflowY: "auto",
-                  maxWidth: "600px",
-                  width: "100%",
-                }}
-              >
+            <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }}>
+              <div style={{ backgroundColor: "white", padding: "30px", borderRadius: "8px", maxHeight: "90vh", overflowY: "auto", maxWidth: "600px", width: "100%" }}>
                 <h2>Edit Challenge</h2>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "15px",
-                    marginTop: "10px",
-                  }}
-                >
+                <div style={{ display: "flex", flexDirection: "column", gap: "15px", marginTop: "10px" }}>
                   <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontWeight: "bold",
-                        marginBottom: "5px",
-                      }}
-                    >
-                      Challenge Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={editingChallenge.name}
-                      onChange={(e) =>
-                        setEditingChallenge({
-                          ...editingChallenge,
-                          name: e.target.value,
-                        })
-                      }
-                      style={{
-                        width: "100%",
-                        padding: "10px",
-                        borderRadius: "5px",
-                        border: "1px solid #ddd",
-                      }}
-                    />
+                    <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Challenge Name *</label>
+                    <input type="text" value={editingChallenge.name} onChange={(e) => setEditingChallenge({ ...editingChallenge, name: e.target.value })} style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                   </div>
-
                   <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontWeight: "bold",
-                        marginBottom: "5px",
-                      }}
-                    >
-                      Description *
-                    </label>
-                    <textarea
-                      value={editingChallenge.description}
-                      onChange={(e) =>
-                        setEditingChallenge({
-                          ...editingChallenge,
-                          description: e.target.value,
-                        })
-                      }
-                      style={{
-                        width: "100%",
-                        padding: "10px",
-                        borderRadius: "5px",
-                        border: "1px solid #ddd",
-                        minHeight: "80px",
-                      }}
-                    />
+                    <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Description *</label>
+                    <textarea value={editingChallenge.description} onChange={(e) => setEditingChallenge({ ...editingChallenge, description: e.target.value })} style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd", minHeight: "80px" }} />
                   </div>
-
                   <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontWeight: "bold",
-                        marginBottom: "5px",
-                      }}
-                    >
-                      Type
-                    </label>
-                    <select
-                      value={editingChallenge.type}
-                      onChange={(e) =>
-                        setEditingChallenge({
-                          ...editingChallenge,
-                          type: e.target.value,
-                        })
-                      }
-                      style={{
-                        width: "100%",
-                        padding: "10px",
-                        borderRadius: "5px",
-                        border: "1px solid #ddd",
-                      }}
-                    >
+                    <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Type</label>
+                    <select value={editingChallenge.type} onChange={(e) => setEditingChallenge({ ...editingChallenge, type: e.target.value })} style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }}>
                       <option value="plank">Plank (seconds)</option>
                       <option value="squat">Squat (reps)</option>
                     </select>
                   </div>
-
                   <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontWeight: "bold",
-                        marginBottom: "5px",
-                      }}
-                    >
-                      Start Date *
-                    </label>
-                    <input
-                      type="date"
-                      value={editingChallenge.startDate}
-                      onChange={(e) =>
-                        setEditingChallenge({
-                          ...editingChallenge,
-                          startDate: e.target.value,
-                        })
-                      }
-                      style={{
-                        width: "100%",
-                        padding: "10px",
-                        borderRadius: "5px",
-                        border: "1px solid #ddd",
-                      }}
-                    />
+                    <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Start Date *</label>
+                    <input type="date" value={editingChallenge.startDate} onChange={(e) => setEditingChallenge({ ...editingChallenge, startDate: e.target.value })} style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                   </div>
-
                   <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontWeight: "bold",
-                        marginBottom: "5px",
-                      }}
-                    >
-                      Number of Days
-                    </label>
-                    <input
-                      type="number"
-                      value={editingChallenge.numberOfDays}
-                      onChange={(e) =>
-                        setEditingChallenge({
-                          ...editingChallenge,
-                          numberOfDays: parseInt(e.target.value, 10),
-                        })
-                      }
-                      min="1"
-                      style={{
-                        width: "100%",
-                        padding: "10px",
-                        borderRadius: "5px",
-                        border: "1px solid #ddd",
-                      }}
-                    />
+                    <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Number of Days</label>
+                    <input type="number" value={editingChallenge.numberOfDays} onChange={(e) => setEditingChallenge({ ...editingChallenge, numberOfDays: parseInt(e.target.value, 10) })} min="1" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                   </div>
-
                   <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontWeight: "bold",
-                        marginBottom: "5px",
-                      }}
-                    >
-                      Starting Value (
-                      {editingChallenge.type === "plank" ? "seconds" : "reps"})
-                    </label>
-                    <input
-                      type="number"
-                      value={editingChallenge.startingValue}
-                      onChange={(e) =>
-                        setEditingChallenge({
-                          ...editingChallenge,
-                          startingValue: parseInt(e.target.value, 10),
-                        })
-                      }
-                      min="1"
-                      style={{
-                        width: "100%",
-                        padding: "10px",
-                        borderRadius: "5px",
-                        border: "1px solid #ddd",
-                      }}
-                    />
+                    <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Starting Value ({editingChallenge.type === "plank" ? "seconds" : "reps"})</label>
+                    <input type="number" value={editingChallenge.startingValue} onChange={(e) => setEditingChallenge({ ...editingChallenge, startingValue: parseInt(e.target.value, 10) })} min="1" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                   </div>
-
                   <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontWeight: "bold",
-                        marginBottom: "5px",
-                      }}
-                    >
-                      Increment Per Day
-                    </label>
-                    <input
-                      type="number"
-                      value={editingChallenge.incrementPerDay}
-                      onChange={(e) =>
-                        setEditingChallenge({
-                          ...editingChallenge,
-                          incrementPerDay: parseInt(e.target.value, 10),
-                        })
-                      }
-                      min="0"
-                      style={{
-                        width: "100%",
-                        padding: "10px",
-                        borderRadius: "5px",
-                        border: "1px solid #ddd",
-                      }}
-                    />
+                    <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Increment Per Day</label>
+                    <input type="number" value={editingChallenge.incrementPerDay} onChange={(e) => setEditingChallenge({ ...editingChallenge, incrementPerDay: parseInt(e.target.value, 10) })} min="0" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                   </div>
-
                   <div>
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={editingChallenge.isTeamChallenge || false}
-                        onChange={(e) =>
-                          setEditingChallenge({
-                            ...editingChallenge,
-                            isTeamChallenge: e.target.checked,
-                          })
-                        }
-                      />
-                      <span style={{ fontWeight: "bold" }}>
-                        Team Challenge (requires team selection)
-                      </span>
+                    <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <input type="checkbox" checked={editingChallenge.isTeamChallenge || false} onChange={(e) => setEditingChallenge({ ...editingChallenge, isTeamChallenge: e.target.checked })} />
+                      <span style={{ fontWeight: "bold" }}>Team Challenge (requires team selection)</span>
                     </label>
                   </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "10px",
-                      marginTop: "10px",
-                    }}
-                  >
-                    <button
-                      onClick={handleSaveEdit}
-                      style={{
-                        flex: 1,
-                        padding: "12px",
-                        fontSize: "16px",
-                        backgroundColor: "#4CAF50",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "5px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Save Changes
-                    </button>
-                    <button
-                      onClick={() => setEditingChallenge(null)}
-                      style={{
-                        flex: 1,
-                        padding: "12px",
-                        fontSize: "16px",
-                        backgroundColor: "#999",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "5px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Cancel
-                    </button>
+                  <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+                    <button onClick={handleSaveEdit} style={{ flex: 1, padding: "12px", fontSize: "16px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>Save Changes</button>
+                    <button onClick={() => setEditingChallenge(null)} style={{ flex: 1, padding: "12px", fontSize: "16px", backgroundColor: "#999", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>Cancel</button>
                   </div>
                 </div>
               </div>
@@ -1329,56 +751,16 @@ export default function AdminPanel({ user }) {
           )}
 
           {confirmAction && (
-            <div
-              style={{
-                position: "fixed",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: "rgba(0,0,0,0.7)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                zIndex: 2000,
-                padding: "20px",
-              }}
-            >
-              <div
-                style={{
-                  backgroundColor: "white",
-                  padding: "30px",
-                  borderRadius: "8px",
-                  maxWidth: "500px",
-                  width: "100%",
-                }}
-              >
+            <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: "20px" }}>
+              <div style={{ backgroundColor: "white", padding: "30px", borderRadius: "8px", maxWidth: "500px", width: "100%" }}>
                 <h2>
-                  {confirmAction.type === "reset"
-                    ? "Reset Challenge"
-                    : confirmAction.type === "forceEnd"
-                    ? "Force End Challenge"
-                    : "Confirm Action"}
+                  {confirmAction.type === "reset" ? "Reset Challenge" : confirmAction.type === "forceEnd" ? "Force End Challenge" : "Confirm Action"}
                 </h2>
-                <p
-                  style={{
-                    fontSize: "16px",
-                    marginBottom: "20px",
-                    color: "#333",
-                  }}
-                >
-                  {confirmAction.message}
-                </p>
+                <p style={{ fontSize: "16px", marginBottom: "20px", color: "#333" }}>{confirmAction.message}</p>
 
                 {(confirmAction.type === "reset" || confirmAction.type === "forceEnd") && (
                   <div style={{ marginBottom: "20px" }}>
-                    <label
-                      style={{
-                        display: "block",
-                        fontWeight: "bold",
-                        marginBottom: "8px",
-                      }}
-                    >
+                    <label style={{ display: "block", fontWeight: "bold", marginBottom: "8px" }}>
                       Type {confirmAction.type === "reset" ? "RESET" : "END"} to confirm
                     </label>
                     <input
@@ -1386,13 +768,7 @@ export default function AdminPanel({ user }) {
                       value={resetConfirmText}
                       onChange={(e) => setResetConfirmText(e.target.value)}
                       placeholder={`Type ${confirmAction.type === "reset" ? "RESET" : "END"}`}
-                      style={{
-                        width: "100%",
-                        padding: "10px",
-                        borderRadius: "5px",
-                        border: "1px solid #ddd",
-                        fontSize: "14px",
-                      }}
+                      style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd", fontSize: "14px" }}
                     />
                   </div>
                 )}
@@ -1400,17 +776,11 @@ export default function AdminPanel({ user }) {
                 <div style={{ display: "flex", gap: "10px" }}>
                   <button
                     onClick={() => {
-                      if (confirmAction.type === "confirmEdit") {
-                        confirmEdit();
-                      } else if (confirmAction.type === "deactivate") {
-                        confirmDeactivate(confirmAction.challengeId, confirmAction.challenge);
-                      } else if (confirmAction.type === "delete") {
-                        confirmDelete(confirmAction.challengeId);
-                      } else if (confirmAction.type === "reset") {
-                        confirmReset(confirmAction.challengeId);
-                      } else if (confirmAction.type === "forceEnd") {
-                        confirmForceEnd(confirmAction.challengeId, confirmAction.challenge);
-                      }
+                      if (confirmAction.type === "confirmEdit") confirmEdit();
+                      else if (confirmAction.type === "deactivate") confirmDeactivate(confirmAction.challengeId, confirmAction.challenge);
+                      else if (confirmAction.type === "delete") confirmDelete(confirmAction.challengeId);
+                      else if (confirmAction.type === "reset") confirmReset(confirmAction.challengeId);
+                      else if (confirmAction.type === "forceEnd") confirmForceEnd(confirmAction.challengeId, confirmAction.challenge);
                     }}
                     disabled={
                       (confirmAction.type === "reset" && resetConfirmText !== "RESET") ||
@@ -1420,52 +790,19 @@ export default function AdminPanel({ user }) {
                       flex: 1,
                       padding: "12px",
                       fontSize: "16px",
-                      backgroundColor:
-                        confirmAction.type === "delete" ||
-                        confirmAction.type === "reset" ||
-                        confirmAction.type === "forceEnd"
-                          ? "#d32f2f"
-                          : "#4CAF50",
+                      backgroundColor: ["delete", "reset", "forceEnd"].includes(confirmAction.type) ? "#d32f2f" : "#4CAF50",
                       color: "white",
                       border: "none",
                       borderRadius: "5px",
-                      cursor:
-                        (confirmAction.type === "reset" && resetConfirmText !== "RESET") ||
-                        (confirmAction.type === "forceEnd" && resetConfirmText !== "END")
-                          ? "not-allowed"
-                          : "pointer",
-                      opacity:
-                        (confirmAction.type === "reset" && resetConfirmText !== "RESET") ||
-                        (confirmAction.type === "forceEnd" && resetConfirmText !== "END")
-                          ? 0.5
-                          : 1,
+                      cursor: (confirmAction.type === "reset" && resetConfirmText !== "RESET") || (confirmAction.type === "forceEnd" && resetConfirmText !== "END") ? "not-allowed" : "pointer",
+                      opacity: (confirmAction.type === "reset" && resetConfirmText !== "RESET") || (confirmAction.type === "forceEnd" && resetConfirmText !== "END") ? 0.5 : 1,
                     }}
                   >
-                    {confirmAction.type === "confirmEdit"
-                      ? "Save Changes"
-                      : confirmAction.type === "deactivate"
-                      ? "Deactivate"
-                      : confirmAction.type === "delete"
-                      ? "Delete"
-                      : confirmAction.type === "forceEnd"
-                      ? "Force End"
-                      : "Confirm"}
+                    {confirmAction.type === "confirmEdit" ? "Save Changes" : confirmAction.type === "deactivate" ? "Deactivate" : confirmAction.type === "delete" ? "Delete" : confirmAction.type === "forceEnd" ? "Force End" : "Confirm"}
                   </button>
                   <button
-                    onClick={() => {
-                      setConfirmAction(null);
-                      setResetConfirmText("");
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: "12px",
-                      fontSize: "16px",
-                      backgroundColor: "#999",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "5px",
-                      cursor: "pointer",
-                    }}
+                    onClick={() => { setConfirmAction(null); setResetConfirmText(""); }}
+                    style={{ flex: 1, padding: "12px", fontSize: "16px", backgroundColor: "#999", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}
                   >
                     Cancel
                   </button>
@@ -1475,448 +812,105 @@ export default function AdminPanel({ user }) {
           )}
 
           {loading ? (
-            <div style={{ textAlign: "center", padding: "40px" }}>
-              <p>Loading challenges...</p>
-            </div>
+            <div style={{ textAlign: "center", padding: "40px" }}><p>Loading challenges...</p></div>
           ) : challenges.length === 0 ? (
-            <div
-              style={{
-                textAlign: "center",
-                padding: "40px",
-                backgroundColor: "white",
-                borderRadius: "8px",
-              }}
-            >
-              <p style={{ color: "#999" }}>
-                No challenges yet. Create one to get started!
-              </p>
+            <div style={{ textAlign: "center", padding: "40px", backgroundColor: "white", borderRadius: "8px" }}>
+              <p style={{ color: "#999" }}>No challenges yet. Create one to get started!</p>
             </div>
           ) : (
             <>
               <div>
-                <h2 style={{ marginTop: "30px", marginBottom: "15px" }}>
-                  Active Challenges
-                </h2>
+                <h2 style={{ marginTop: "30px", marginBottom: "15px" }}>Active Challenges</h2>
                 {challenges.filter((c) => c.isActive).length === 0 ? (
                   <p style={{ color: "#999" }}>No active challenges</p>
                 ) : (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "15px",
-                    }}
-                  >
-                    {challenges
-                      .filter((c) => c.isActive)
-                      .map((challenge) => (
-                        <div
-                          key={challenge.id}
-                          style={{
-                            backgroundColor: "white",
-                            padding: "20px",
-                            borderRadius: "8px",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "flex-start",
-                            }}
-                          >
-                            <div>
-                              <h3 style={{ margin: "0 0 5px 0" }}>
-                                {challenge.name}
-                                {challenge.isTeamChallenge && (
-                                  <span
-                                    style={{
-                                      marginLeft: "8px",
-                                      fontSize: "12px",
-                                      padding: "2px 8px",
-                                      backgroundColor: "#4CAF50",
-                                      color: "white",
-                                      borderRadius: "4px",
-                                    }}
-                                  >
-                                    TEAM
-                                  </span>
-                                )}
-                              </h3>
-                              <span style={{ color: "#999", fontSize: "14px" }}>
-                                {challenge.userCount} users
-                              </span>
-                            </div>
-                          </div>
-                          <p
-                            style={{
-                              margin: "5px 0",
-                              color: "#666",
-                              fontSize: "14px",
-                            }}
-                          >
-                            {challenge.numberOfDays} days • Starts{" "}
-                            {challenge.startDate?.toDate
-                              ? challenge.startDate.toDate().toLocaleDateString()
-                              : ""}
-                          </p>
-                          <p
-                            style={{
-                              margin: "5px 0",
-                              color: "#666",
-                              fontSize: "14px",
-                            }}
-                          >
-                            {challenge.description}
-                          </p>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "8px",
-                              marginTop: "15px",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <button
-                              onClick={() => handleEditClick(challenge)}
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: "14px",
-                                backgroundColor: "#2196F3",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeactivate(challenge)}
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: "14px",
-                                backgroundColor: "#FF9800",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Deactivate
-                            </button>
-                            <button
-                              onClick={() => handleForceEnd(challenge)}
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: "14px",
-                                backgroundColor: "#9C27B0",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Force End
-                            </button>
-                            <button
-                              onClick={() => handleReset(challenge)}
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: "14px",
-                                backgroundColor: "#FF5722",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Reset Challenge
-                            </button>
-                            <button
-                              onClick={() => handleDelete(challenge)}
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: "14px",
-                                backgroundColor: "#d32f2f",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Delete
-                            </button>
-                            <button
-                              onClick={() =>
-                                loadMissedDaysForChallenge(challenge.id)
-                              }
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: "14px",
-                                backgroundColor: "#6A1B9A",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              View Missed Days
-                            </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+                    {challenges.filter((c) => c.isActive).map((challenge) => (
+                      <div key={challenge.id} style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                          <div>
+                            <h3 style={{ margin: "0 0 5px 0" }}>
+                              {challenge.name}
+                              {challenge.isTeamChallenge && (
+                                <span style={{ marginLeft: "8px", fontSize: "12px", padding: "2px 8px", backgroundColor: "#4CAF50", color: "white", borderRadius: "4px" }}>TEAM</span>
+                              )}
+                            </h3>
+                            <span style={{ color: "#999", fontSize: "14px" }}>{challenge.userCount} users</span>
                           </div>
                         </div>
-                      ))}
+                        <p style={{ margin: "5px 0", color: "#666", fontSize: "14px" }}>{challenge.numberOfDays} days • Starts {challenge.startDate?.toDate ? challenge.startDate.toDate().toLocaleDateString() : ""}</p>
+                        <p style={{ margin: "5px 0", color: "#666", fontSize: "14px" }}>{challenge.description}</p>
+                        <div style={{ display: "flex", gap: "8px", marginTop: "15px", flexWrap: "wrap" }}>
+                          <button onClick={() => handleEditClick(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Edit</button>
+                          <button onClick={() => handleDeactivate(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#FF9800", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Deactivate</button>
+                          <button onClick={() => handleForceEnd(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#9C27B0", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Force End</button>
+                          <button onClick={() => handleReset(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#FF5722", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Reset Challenge</button>
+                          <button onClick={() => handleDelete(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#d32f2f", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Delete</button>
+                          <button onClick={() => loadMissedDaysForChallenge(challenge.id)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#6A1B9A", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>View Missed Days</button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
 
               <div>
-                <h2
-                  style={{
-                    marginTop: "40px",
-                    marginBottom: "15px",
-                    color: "#999",
-                  }}
-                >
-                  Inactive Challenges
-                </h2>
+                <h2 style={{ marginTop: "40px", marginBottom: "15px", color: "#999" }}>Inactive Challenges</h2>
                 {challenges.filter((c) => !c.isActive).length === 0 ? (
                   <p style={{ color: "#999" }}>No inactive challenges</p>
                 ) : (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "15px",
-                    }}
-                  >
-                    {challenges
-                      .filter((c) => !c.isActive)
-                      .map((challenge) => (
-                        <div
-                          key={challenge.id}
-                          style={{
-                            backgroundColor: "#f0f0f0",
-                            padding: "20px",
-                            borderRadius: "8px",
-                            opacity: 0.7,
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "flex-start",
-                            }}
-                          >
-                            <div>
-                              <h3
-                                style={{
-                                  margin: "0 0 5px 0",
-                                  color: "#666",
-                                }}
-                              >
-                                {challenge.name}
-                                {challenge.isTeamChallenge && (
-                                  <span
-                                    style={{
-                                      marginLeft: "8px",
-                                      fontSize: "12px",
-                                      padding: "2px 8px",
-                                      backgroundColor: "#999",
-                                      color: "white",
-                                      borderRadius: "4px",
-                                    }}
-                                  >
-                                    TEAM
-                                  </span>
-                                )}
-                              </h3>
-                              <span style={{ color: "#999", fontSize: "14px" }}>
-                                {challenge.userCount} users
-                              </span>
-                            </div>
-                          </div>
-                          <p
-                            style={{
-                              margin: "5px 0",
-                              color: "#999",
-                              fontSize: "14px",
-                            }}
-                          >
-                            INACTIVE
-                          </p>
-                          <p
-                            style={{
-                              margin: "5px 0",
-                              color: "#999",
-                              fontSize: "14px",
-                            }}
-                          >
-                            {challenge.numberOfDays} days • Starts{" "}
-                            {challenge.startDate?.toDate
-                              ? challenge.startDate.toDate().toLocaleDateString()
-                              : ""}
-                          </p>
-                          <p
-                            style={{
-                              margin: "5px 0",
-                              color: "#999",
-                              fontSize: "14px",
-                            }}
-                          >
-                            {challenge.description}
-                          </p>
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "8px",
-                              marginTop: "15px",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <button
-                              onClick={() => handleEditClick(challenge)}
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: "14px",
-                                backgroundColor: "#2196F3",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeactivate(challenge)}
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: "14px",
-                                backgroundColor: "#4CAF50",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Activate
-                            </button>
-                            <button
-                              onClick={() => handleDelete(challenge)}
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: "14px",
-                                backgroundColor: "#d32f2f",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Delete
-                            </button>
-                            <button
-                              onClick={() =>
-                                loadMissedDaysForChallenge(challenge.id)
-                              }
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: "14px",
-                                backgroundColor: "#6A1B9A",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              View Missed Days
-                            </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+                    {challenges.filter((c) => !c.isActive).map((challenge) => (
+                      <div key={challenge.id} style={{ backgroundColor: "#f0f0f0", padding: "20px", borderRadius: "8px", opacity: 0.7, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                          <div>
+                            <h3 style={{ margin: "0 0 5px 0", color: "#666" }}>
+                              {challenge.name}
+                              {challenge.isTeamChallenge && (
+                                <span style={{ marginLeft: "8px", fontSize: "12px", padding: "2px 8px", backgroundColor: "#999", color: "white", borderRadius: "4px" }}>TEAM</span>
+                              )}
+                            </h3>
+                            <span style={{ color: "#999", fontSize: "14px" }}>{challenge.userCount} users</span>
                           </div>
                         </div>
-                      ))}
+                        <p style={{ margin: "5px 0", color: "#999", fontSize: "14px" }}>INACTIVE</p>
+                        <p style={{ margin: "5px 0", color: "#999", fontSize: "14px" }}>{challenge.numberOfDays} days • Starts {challenge.startDate?.toDate ? challenge.startDate.toDate().toLocaleDateString() : ""}</p>
+                        <p style={{ margin: "5px 0", color: "#999", fontSize: "14px" }}>{challenge.description}</p>
+                        <div style={{ display: "flex", gap: "8px", marginTop: "15px", flexWrap: "wrap" }}>
+                          <button onClick={() => handleEditClick(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Edit</button>
+                          <button onClick={() => handleDeactivate(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Activate</button>
+                          <button onClick={() => handleDelete(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#d32f2f", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Delete</button>
+                          <button onClick={() => loadMissedDaysForChallenge(challenge.id)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#6A1B9A", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>View Missed Days</button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             </>
           )}
 
-          <div
-            style={{
-              marginTop: "40px",
-              padding: "20px",
-              backgroundColor: "white",
-              borderRadius: "8px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-            }}
-          >
+          <div style={{ marginTop: "40px", padding: "20px", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
             <h2>Missed Days (Selected Challenge)</h2>
             {missedLoading ? (
               <p>Loading missed days...</p>
             ) : Object.keys(missedByDay).length === 0 ? (
-              <p style={{ color: "#999" }}>
-                Click "View Missed Days" on a challenge above to see details.
-              </p>
+              <p style={{ color: "#999" }}>Click "View Missed Days" on a challenge above to see details.</p>
             ) : (
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  marginTop: "10px",
-                  fontSize: "14px",
-                }}
-              >
+              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "10px", fontSize: "14px" }}>
                 <thead>
                   <tr>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        padding: "8px",
-                        borderBottom: "1px solid #ddd",
-                      }}
-                    >
-                      Day
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        padding: "8px",
-                        borderBottom: "1px solid #ddd",
-                      }}
-                    >
-                      Users Who Missed
-                    </th>
+                    <th style={{ textAlign: "left", padding: "8px", borderBottom: "1px solid #ddd" }}>Day</th>
+                    <th style={{ textAlign: "left", padding: "8px", borderBottom: "1px solid #ddd" }}>Users Who Missed</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(missedByDay)
-                    .sort((a, b) => Number(a[0]) - Number(b[0]))
-                    .map(([day, users]) => (
-                      <tr key={day}>
-                        <td
-                          style={{
-                            padding: "8px",
-                            borderBottom: "1px solid #eee",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          Day {day}
-                        </td>
-                        <td
-                          style={{
-                            padding: "8px",
-                            borderBottom: "1px solid #eee",
-                          }}
-                        >
-                          {users
-                            .map((u) => (u.displayName ? u.displayName : u.userId))
-                            .join(", ")}
-                        </td>
-                      </tr>
-                    ))}
+                  {Object.entries(missedByDay).sort((a, b) => Number(a[0]) - Number(b[0])).map(([day, users]) => (
+                    <tr key={day}>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>Day {day}</td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid #eee" }}>{users.map((u) => u.displayName || u.userId).join(", ")}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             )}
