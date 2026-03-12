@@ -12,7 +12,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { getAllUserBadges } from "../badgeHelpers";
-import BadgeDisplay, { LegacyBadgeDisplay } from "./BadgeDisplay";
+import { LegacyBadgeDisplay } from "./BadgeDisplay";
 import ChallengeEndedCard from "./ChallengeEndedCard";
 
 export default function Profile({ user, completedChallenges = [] }) {
@@ -144,16 +144,6 @@ export default function Profile({ user, completedChallenges = [] }) {
     }
   };
 
-  const getLongestStreak = () => {
-    if (!allBadges || !allBadges.byChallengeId) return 0;
-    let longest = 0;
-    for (const cId in allBadges.byChallengeId) {
-      const bd = allBadges.byChallengeId[cId];
-      if (bd.longestStreak > longest) longest = bd.longestStreak;
-    }
-    return longest;
-  };
-
   const allTimePlankAvg = stats.plankSuccessCount > 0 ? Math.round(stats.totalPlankSeconds / stats.plankSuccessCount) : null;
   const allTimeSquatAvg = stats.squatSuccessCount > 0 ? Math.round(stats.totalSquats / stats.squatSuccessCount) : null;
 
@@ -172,6 +162,56 @@ export default function Profile({ user, completedChallenges = [] }) {
     earnedTimeBadges: [],
   };
 
+  // ── Performance Badges (inline, Profile only) ──────────────────────────────
+  const performancePills = [
+    {
+      key: "double",
+      emoji: "⚡",
+      label: "Double Trouble",
+      count: allBadges?.allMultipliers?.double || 0,
+      bg: "#dbeafe",
+      border: "#3b82f6",
+      color: "#1e3a8a",
+    },
+    {
+      key: "triple",
+      emoji: "🚀",
+      label: "Triple Threat",
+      count: allBadges?.allMultipliers?.triple || 0,
+      bg: "#fce7f3",
+      border: "#ec4899",
+      color: "#831843",
+    },
+    {
+      key: "quadruple",
+      emoji: "👑",
+      label: "4x Champion",
+      count: allBadges?.allMultipliers?.quadruple || 0,
+      bg: "#f3e8ff",
+      border: "#a855f7",
+      color: "#581c87",
+    },
+  ].filter((p) => p.count > 0);
+
+  // Streak pills — size grows dramatically with milestone (2px font bump each tier)
+  const streakPillConfig = [
+    { days: 3,  label: "3-Day Streak",  fontSize: 13, paddingV: 8,  paddingH: 14 },
+    { days: 7,  label: "7-Day Streak",  fontSize: 15, paddingV: 10, paddingH: 16 },
+    { days: 14, label: "14-Day Streak", fontSize: 17, paddingV: 11, paddingH: 18 },
+    { days: 21, label: "21-Day Streak", fontSize: 19, paddingV: 12, paddingH: 20 },
+    { days: 28, label: "28-Day Streak", fontSize: 21, paddingV: 14, paddingH: 22 },
+  ];
+
+  const streakPills = streakPillConfig
+    .map((cfg) => ({
+      ...cfg,
+      count: allBadges?.allStreakBadges?.[cfg.days] || 0,
+    }))
+    .filter((p) => p.count > 0);
+
+  const hasAnyPerformanceBadges = performancePills.length > 0;
+  const hasAnyStreakBadges = streakPills.length > 0;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
@@ -184,11 +224,20 @@ export default function Profile({ user, completedChallenges = [] }) {
           </p>
           <div className="form-group">
             <label className="form-label">Display name (in this app)</label>
-            <input type="text" className="form-control" value={profileName} onChange={(e) => setProfileName(e.target.value)} disabled={isSavingName} placeholder="Enter name to show in app" />
+            <input
+              type="text"
+              className="form-control"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              disabled={isSavingName}
+              placeholder="Enter name to show in app"
+            />
           </div>
-          <button className="btn btn--primary btn--full-width" onClick={handleSaveName} disabled={isSavingName}>
-            {isSavingName ? "Saving..." : "Save Name"}
-          </button>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "10px" }}>
+            <button className="btn btn--primary" onClick={handleSaveName} disabled={isSavingName}>
+              {isSavingName ? "Saving..." : "Save Name"}
+            </button>
+          </div>
           {nameMessage && <p style={{ marginTop: "8px", fontSize: "13px", color: "#555" }}>{nameMessage}</p>}
         </div>
       </div>
@@ -226,33 +275,96 @@ export default function Profile({ user, completedChallenges = [] }) {
         </div>
       </div>
 
-      {/* All-Time Challenge Badges Card (renamed from Total Badges) */}
+      {/* All-Time Performance Badges Card */}
       <div className="card" style={{ textAlign: "left", maxWidth: "500px", margin: "0 auto" }}>
         <div className="card__body">
-          <h2 style={{ marginTop: 0, marginBottom: "12px" }}>🏅 All-Time Challenge Badges</h2>
+          <h2 style={{ marginTop: 0, marginBottom: "4px" }}>💪 All-Time Performance Badges</h2>
+          <p style={{ fontSize: "14px", color: "var(--color-text-secondary)", marginTop: 0, marginBottom: "16px" }}>
+            Earned across all challenges
+          </p>
+
           {badgesLoading && <p>Loading badges...</p>}
+
           {!badgesLoading && allBadges && (
-            <>
-              <div style={{ fontSize: "14px", color: "var(--color-text-secondary)", marginBottom: "16px" }}>
-                Achievements earned across all challenges
-                {getLongestStreak() > 0 && (
-                  <div style={{ marginTop: "4px", fontWeight: "600", color: "var(--color-text)" }}>
-                    Longest streak: {getLongestStreak()} days 🔥
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+
+              {/* 💪 Performance Sub-Section */}
+              <div>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-secondary)", marginBottom: "10px" }}>
+                  💪 Performance
+                </div>
+                {hasAnyPerformanceBadges ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                    {performancePills.map((pill) => (
+                      <div
+                        key={pill.key}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "4px",
+                          padding: "10px 18px",
+                          backgroundColor: pill.bg,
+                          border: `2px solid ${pill.border}`,
+                          borderRadius: "20px",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          color: pill.color,
+                          minWidth: "100px",
+                        }}
+                      >
+                        <span>{pill.emoji} {pill.label}</span>
+                        <span>×{pill.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "13px", color: "#9ca3af", fontStyle: "italic" }}>
+                    Double, triple, or quadruple your goal to earn badges!
                   </div>
                 )}
               </div>
-              <BadgeDisplay
-                streakBadges={allBadges.allStreakBadges}
-                currentStreak={0}
-                doubleBadgeCount={allBadges.allMultipliers.double}
-                tripleBadgeCount={allBadges.allMultipliers.triple}
-                quadrupleBadgeCount={allBadges.allMultipliers.quadruple}
-                timeBadges={allBadges.allTimeBadges}
-                totalPlankSeconds={0}
-                showProgress={false}
-                compact={false}
-              />
-            </>
+
+              {/* 🔥 Streaks Sub-Section */}
+              <div>
+                <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-secondary)", marginBottom: "10px" }}>
+                  🔥 Streaks
+                </div>
+                {hasAnyStreakBadges ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "flex-end" }}>
+                    {streakPills.map((pill) => (
+                      <div
+                        key={pill.days}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "4px",
+                          padding: `${pill.paddingV}px ${pill.paddingH}px`,
+                          backgroundColor: "#fef3c7",
+                          border: "2px solid #fbbf24",
+                          borderRadius: "20px",
+                          fontSize: `${pill.fontSize}px`,
+                          fontWeight: "600",
+                          color: "#78350f",
+                          minWidth: "80px",
+                        }}
+                      >
+                        <span>🔥 {pill.label}</span>
+                        <span>×{pill.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "13px", color: "#9ca3af", fontStyle: "italic" }}>
+                    Complete a 3-day streak to earn your first streak badge!
+                  </div>
+                )}
+              </div>
+
+            </div>
           )}
         </div>
       </div>
