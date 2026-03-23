@@ -1,12 +1,14 @@
 // src/components/ChallengeEndedCard.js
 import React, { useState, useEffect } from "react";
+import { db } from "../firebase";
+import { doc, getDoc } from "firebase/firestore";
 import { calculateChallengeRankings } from "../rankingCalculator";
 
 export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd = false }) {
   const [isCalculatingRank, setIsCalculatingRank] = useState(false);
   const [rankError, setRankError] = useState(null);
-  const [localRank, setLocalRank] = useState(userChallenge.finalRank);
-  const [localTotalParticipants, setLocalTotalParticipants] = useState(userChallenge.totalParticipants);
+  const [localRank, setLocalRank] = useState(userChallenge.finalRank ?? null);
+  const [localTotalParticipants, setLocalTotalParticipants] = useState(userChallenge.totalParticipants ?? null);
 
   const challengeDetails = userChallenge.challengeDetails;
   const isPlank = challengeDetails.type === "plank";
@@ -38,8 +40,8 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
       }
 
       // Check if we have the stats data needed
-      if (!userChallenge.bestPerformance || totalDaysAttempted === 0) {
-        // No attempts recorded, no need to calculate rank
+      // Use == null (not falsy) so bestPerformance of 0 doesn't block ranking
+      if (userChallenge.bestPerformance == null || totalDaysAttempted === 0) {
         return;
       }
 
@@ -47,13 +49,19 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
       setRankError(null);
 
       try {
+        // Write rankings for all participants to Firestore
         await calculateChallengeRankings(
           userChallenge.challengeId,
           challengeDetails.type
         );
 
-        setLocalRank(userChallenge.finalRank || "?");
-        setLocalTotalParticipants(userChallenge.totalParticipants || "?");
+        // Re-fetch this user's doc to get the freshly written finalRank
+        // (the prop is stale — it was loaded before rankings were calculated)
+        const freshDoc = await getDoc(doc(db, "userChallenges", userChallenge.userChallengeId));
+        const freshData = freshDoc.exists() ? freshDoc.data() : null;
+
+        setLocalRank(freshData?.finalRank ?? null);
+        setLocalTotalParticipants(freshData?.totalParticipants ?? null);
       } catch (error) {
         console.error("Error calculating rankings:", error);
         setRankError("Could not calculate rankings");
