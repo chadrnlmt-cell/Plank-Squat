@@ -3,6 +3,13 @@
   text-align: center;
 }
 
+/* iOS auto-zoom prevention: Safari zooms in on any interactive element
+   with font-size < 16px. This ensures a minimum of 16px on all inputs
+   and buttons to prevent unwanted zoom on tab switches and button taps. */
+input, select, textarea, button {
+  font-size: max(16px, 1em);
+}
+
 /* Badge Styles */
 .badge {
   display: inline-flex;
