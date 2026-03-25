@@ -174,11 +174,12 @@ function calculateMultiplierBadges(actualValue, targetValue, currentCounts) {
 }
 
 /**
- * Calculate time badges (plank only)
+ * Calculate time badges for active challenge (plank only)
+ * Milestones: every 15 minutes (900s) up to 5 hours (18000s)
  */
 function calculateTimeBadges(totalSeconds, currentBadgeLevel, existingCompletedBadges) {
   const milestones = [];
-  for (let i = 1800; i <= 36000; i += 1800) {
+  for (let i = 900; i <= 18000; i += 900) {
     milestones.push(i);
   }
 
@@ -210,6 +211,7 @@ const LEGACY_RUN_MILESTONES = (() => {
   return m;
 })();
 
+// Lifetime milestones unchanged: 30-min steps up to 10 hours
 const LEGACY_TIME_MILESTONES = (() => {
   const m = [];
   for (let i = 1800; i <= 36000; i += 1800) m.push(i);
@@ -518,9 +520,6 @@ export async function updateBadgesOnCompletion({
   movementType,
 }) {
   try {
-    // ── Double-submit guard ──────────────────────────────────────────────────
-    // If a successful attempt for this day already exists, skip badge updates
-    // entirely to prevent streak inflation and duplicate multiplier counts.
     const attemptsRef = collection(db, "attempts");
     const existingSuccessQuery = query(
       attemptsRef,
@@ -536,7 +535,6 @@ export async function updateBadgesOnCompletion({
       );
       return { newBadges: [] };
     }
-    // ────────────────────────────────────────────────────────────────────────
 
     const userStatsRef = doc(db, "userStats", userId);
     const userStatsSnap = await getDoc(userStatsRef);

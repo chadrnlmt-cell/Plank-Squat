@@ -1,5 +1,14 @@
 // src/components/BadgeDisplay.js
-import React from "react";
+import React, { useMemo } from "react";
+
+// Motivational labels for time badge progress — randomly rotated each render
+const TIME_MOTIVATIONS = [
+  (minsLeft, nextLabel) => `${minsLeft} more for your ${nextLabel} badge! ⏱️`,
+  (minsLeft, nextLabel) => `Almost there — just ${minsLeft} away from ${nextLabel}! 🔥`,
+  (minsLeft, nextLabel) => `Keep planking! ${minsLeft} left to unlock ${nextLabel} ⏱️`,
+  (_minsLeft, nextLabel) => `Next milestone: ${nextLabel} total (keep going!)`,
+  (minsLeft, nextLabel) => `🔓 Unlock ${nextLabel} badge — ${minsLeft} of planking left!`,
+];
 
 export default function BadgeDisplay({
   currentStreak = 0,
@@ -24,6 +33,16 @@ export default function BadgeDisplay({
     return `${mins}m`;
   };
 
+  const formatTimeLeft = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      if (mins > 0) return `${hours}h ${mins}m`;
+      return `${hours}h`;
+    }
+    return `${mins}m`;
+  };
+
   const getNextStreakMilestone = () => {
     const milestones = [3, 7, 14, 21, 28];
     for (const m of milestones) {
@@ -32,9 +51,10 @@ export default function BadgeDisplay({
     return null;
   };
 
+  // Active challenge: 15-min steps up to 5 hours (18000s)
   const getNextTimeMilestone = () => {
     const milestones = [];
-    for (let i = 1800; i <= 36000; i += 1800) milestones.push(i);
+    for (let i = 900; i <= 18000; i += 900) milestones.push(i);
     for (const m of milestones) {
       if (totalPlankSeconds < m) return m;
     }
@@ -43,6 +63,17 @@ export default function BadgeDisplay({
 
   const nextStreakMilestone = getNextStreakMilestone();
   const nextTimeMilestone = getNextTimeMilestone();
+
+  // Pick a motivation label, rotating based on totalPlankSeconds so it changes each session
+  const timeMotivationLabel = useMemo(() => {
+    if (!nextTimeMilestone) return null;
+    const idx = Math.floor(totalPlankSeconds / 900) % TIME_MOTIVATIONS.length;
+    const secsLeft = nextTimeMilestone - totalPlankSeconds;
+    const minsLeft = formatTimeLeft(secsLeft);
+    const nextLabel = formatTime(nextTimeMilestone);
+    return TIME_MOTIVATIONS[idx](minsLeft, nextLabel);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalPlankSeconds, nextTimeMilestone]);
 
   const badgeStyle = {
     display: "inline-flex",
@@ -60,7 +91,6 @@ export default function BadgeDisplay({
   const hasCompletedBadges = Object.values(completedStreakBadges).some((count) => count > 0);
   const hasCompletedTimeBadges = Object.keys(completedTimeBadges).length > 0;
 
-  // Build motivating streak label: "X more day(s) for your Y-day badge! 🔥"
   const getStreakMotivationLabel = () => {
     if (!nextStreakMilestone) return null;
     const daysLeft = nextStreakMilestone - currentStreak;
@@ -147,7 +177,7 @@ export default function BadgeDisplay({
           {nextTimeMilestone && (
             <div style={{ padding: "12px", backgroundColor: "#f9fafb", borderRadius: "8px", border: "2px solid #e5e7eb", marginBottom: "12px" }}>
               <div style={{ fontSize: "13px", fontWeight: "600", marginBottom: "8px", color: "#6b7280" }}>
-                Next Badge: {formatTime(nextTimeMilestone)} Total Time ⏱️
+                {timeMotivationLabel}
               </div>
               <div style={{ position: "relative", width: "100%", height: "40px", backgroundColor: "#e5e7eb", borderRadius: "8px", overflow: "hidden", border: "2px solid #d1d5db" }}>
                 <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${(totalPlankSeconds / nextTimeMilestone) * 100}%`, backgroundColor: "#22c55e", transition: "width 0.5s ease", borderRight: totalPlankSeconds > 0 && totalPlankSeconds < nextTimeMilestone ? "2px solid #16a34a" : "none" }} />
@@ -230,6 +260,7 @@ export function LegacyBadgeDisplay({
   earnedTimeBadges = [],
   totalPlankSeconds = 0,
 }) {
+  // Lifetime run milestones: unchanged
   const RUN_MILESTONES = (() => {
     const m = [];
     for (let i = 30; i <= 365; i += 30) m.push(i);
@@ -237,6 +268,7 @@ export function LegacyBadgeDisplay({
     return m;
   })();
 
+  // Lifetime time milestones: unchanged — 30-min steps up to 10 hours
   const TIME_MILESTONES = (() => {
     const m = [];
     for (let i = 1800; i <= 36000; i += 1800) m.push(i);

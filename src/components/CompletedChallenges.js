@@ -92,7 +92,6 @@ export default function CompletedChallenges({ user }) {
         return levels.length > 0 ? levels[0] : 0;
       };
 
-      // Helper to extract value from new {value,challengeId} legacy schema or plain number
       const extractVal = (item) => (typeof item === "object" && item !== null ? item.value : item);
 
       const participants = [];
@@ -120,8 +119,6 @@ export default function CompletedChallenges({ user }) {
         const userStats = userStatsMap[userId];
         const badges = userStats?.badges?.challenges?.[challengeId] || {};
 
-        // -- New Legacy Streak Badge: highest consecutive-run milestone first earned during this challenge
-        // We detect it from earnedConsecutiveRunBadges where challengeId matches
         const rawRunBadges = userStats?.badges?.legacy?.earnedConsecutiveRunBadges || [];
         const legacyRunAtJoin = ucData.legacyRunAtJoin || 0;
         const challengeRunBadges = rawRunBadges
@@ -133,7 +130,6 @@ export default function CompletedChallenges({ user }) {
           .map(item => extractVal(item));
         const newLegacyStreakBadge = challengeRunBadges.length > 0 ? Math.max(...challengeRunBadges) : null;
 
-        // -- New Legacy Time Badge: highest time milestone first earned during this challenge
         const rawTimeBadges = userStats?.badges?.legacy?.earnedTimeBadges || [];
         const challengeTimeBadges = rawTimeBadges
           .filter(item => extractVal(item) !== undefined)
@@ -186,11 +182,10 @@ export default function CompletedChallenges({ user }) {
 
       setParticipantData(participants);
 
+      // Active challenge milestones: 15-min steps up to 5 hours
       const timeMilestones = [];
-      for (let i = 1800; i <= 36000; i += 1800) timeMilestones.push(i);
+      for (let i = 900; i <= 18000; i += 900) timeMilestones.push(i);
 
-      // ── Zero-column detection ────────────────────────────────────────────
-      // A column is shown only if at least one participant has a non-zero value.
       const colVisible = {
         streak3:     participants.some(p => (p.badges.completedStreakBadges[3]  || 0) > 0),
         streak7:     participants.some(p => (p.badges.completedStreakBadges[7]  || 0) > 0),
@@ -204,7 +199,6 @@ export default function CompletedChallenges({ user }) {
         newLegacyTime:   participants.some(p => p.newLegacyTimeBadge !== null),
       };
 
-      // Per-time-milestone visibility (plank only)
       const timeMsVisible = {};
       timeMilestones.forEach(ms => {
         timeMsVisible[ms] = participants.some(p => (p.badges.completedTimeBadges[ms] || 0) > 0);
@@ -292,8 +286,9 @@ export default function CompletedChallenges({ user }) {
     return <div style={{ padding: "20px", textAlign: "center" }}><p style={{ color: "#999" }}>No completed challenges yet.</p></div>;
   }
 
+  // Active challenge milestones for render: 15-min steps up to 5 hours
   const timeMilestones = [];
-  for (let i = 1800; i <= 36000; i += 1800) timeMilestones.push(i);
+  for (let i = 900; i <= 18000; i += 900) timeMilestones.push(i);
 
   const cv = aggregateData?.colVisible || {};
   const tmv = aggregateData?.timeMsVisible || {};
