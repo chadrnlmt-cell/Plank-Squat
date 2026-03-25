@@ -1034,7 +1034,7 @@ export default function App() {
                                 color: "var(--color-text)",
                               }}
                             >
-                              \uD83D\uDCDB Challenge Badges
+                              📋 Challenge Badges
                             </div>
                             <BadgeDisplay
                               currentStreak={badges.currentStreak || 0}
