@@ -153,6 +153,11 @@ export default function PlankTimer({
 
   const RECOVERY_LIMIT = 60;
 
+  // Scroll to top on mount so all overlays/popups are fully visible
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   // Dismiss the milestone banner
   const dismissMilestone = useCallback(() => {
     setActiveMilestone(null);
