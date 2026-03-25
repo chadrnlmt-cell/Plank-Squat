@@ -60,6 +60,17 @@ export default function BadgeDisplay({
   const hasCompletedBadges = Object.values(completedStreakBadges).some((count) => count > 0);
   const hasCompletedTimeBadges = Object.keys(completedTimeBadges).length > 0;
 
+  // Build motivating streak label: "X more day(s) for your Y-day badge! 🔥"
+  const getStreakMotivationLabel = () => {
+    if (!nextStreakMilestone) return null;
+    const daysLeft = nextStreakMilestone - currentStreak;
+    return daysLeft === 1
+      ? `1 more day for your ${nextStreakMilestone}-day badge! 🔥`
+      : `${daysLeft} more days for your ${nextStreakMilestone}-day badge! 🔥`;
+  };
+
+  const streakMotivationLabel = getStreakMotivationLabel();
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "12px" : "16px" }}>
       {nextStreakMilestone && (
@@ -69,7 +80,7 @@ export default function BadgeDisplay({
           </div>
           <div style={{ padding: "12px", backgroundColor: "#f9fafb", borderRadius: "8px", border: "2px solid #e5e7eb" }}>
             <div style={{ fontSize: "13px", fontWeight: "600", marginBottom: "8px", color: "#6b7280" }}>
-              Next Badge: {nextStreakMilestone} Day Streak 🔥
+              {streakMotivationLabel}
             </div>
             <div style={{ position: "relative", width: "100%", height: "40px", backgroundColor: "#e5e7eb", borderRadius: "8px", overflow: "hidden", border: "2px solid #d1d5db" }}>
               <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${(currentStreak / nextStreakMilestone) * 100}%`, backgroundColor: "#fbbf24", transition: "width 0.5s ease", borderRight: currentStreak > 0 && currentStreak < nextStreakMilestone ? "2px solid #f59e0b" : "none" }} />
@@ -212,11 +223,6 @@ function TrophyCard({ label, sublabel, color = "#eab308", bgColor = "#fef9c3", b
   );
 }
 
-/**
- * LegacyBadgeDisplay — Lifetime Achievements card content.
- * earnedConsecutiveRunBadges and earnedTimeBadges are now {value, challengeId}[] objects.
- * We read .value for display; the raw number fallback handles old data gracefully.
- */
 export function LegacyBadgeDisplay({
   consecutiveRun = 0,
   consecutiveRunBadgeLevel = 0,
@@ -237,7 +243,6 @@ export function LegacyBadgeDisplay({
     return m;
   })();
 
-  // Extract numeric values regardless of old (number) or new ({value,challengeId}) schema
   const runValues = earnedConsecutiveRunBadges.map((item) =>
     typeof item === "object" ? item.value : item
   );

@@ -50,7 +50,7 @@ const RECOVERY_TIPS = [
 ];
 
 // Emoji pool to randomize alongside tips
-const RECOVERY_EMOJIS = ["💪", "🔥", "😤", "🧘", "✊", "😮‍💨"];
+const RECOVERY_EMOJIS = ["💪", "🔥", "😤", "🧘", "✊", "😮\u200d💨"];
 
 const HIGH_CELEBRATIONS = [
   "Crushing it! 💪",
@@ -135,10 +135,14 @@ export default function PlankTimer({
   const [newBadges, setNewBadges] = useState([]);
   const [showBadgeCelebration, setShowBadgeCelebration] = useState(false);
 
+  // Submission lock — prevents double-tap on Keep Time
+  const isSubmittingRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Milestone celebration banner
-  const [activeMilestone, setActiveMilestone] = useState(null); // null or one of MILESTONES
+  const [activeMilestone, setActiveMilestone] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
-  const milestonesFiredRef = useRef(new Set()); // track which multipliers already fired
+  const milestonesFiredRef = useRef(new Set());
   const milestoneDismissTimerRef = useRef(null);
 
   const intervalRef = useRef(null);
@@ -161,13 +165,11 @@ export default function PlankTimer({
 
   // Fire a milestone banner
   const fireMilestone = useCallback((milestone) => {
-    // Clear any existing banner first
     if (milestoneDismissTimerRef.current) {
       clearTimeout(milestoneDismissTimerRef.current);
     }
     setActiveMilestone(milestone);
     setShowConfetti(true);
-    // Auto-dismiss after 10 seconds
     milestoneDismissTimerRef.current = setTimeout(() => {
       setActiveMilestone(null);
       setShowConfetti(false);
@@ -475,6 +477,11 @@ export default function PlankTimer({
   };
 
   const handleLogAttempt = async (actualValue, success) => {
+    // Double-tap guard — prevent duplicate submissions
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+
     try {
       const userChallengeRef = doc(db, "userChallenges", userChallengeId);
       const userChallengeSnap = await getDoc(userChallengeRef);
@@ -553,6 +560,9 @@ export default function PlankTimer({
     } catch (error) {
       console.error("Error logging attempt:", error);
       alert("Failed to log attempt: " + (error?.message || "unknown error"));
+      // Reset lock on error so user can try again
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -604,11 +614,11 @@ export default function PlankTimer({
   // Timer color: Blue -> Green -> Gold -> Purple -> Orange
   const getTimerColor = () => {
     if (stage === "autoStopping") return "#22c55e";
-    if (elapsed < targetSeconds) return "#3b82f6";          // Blue (under goal)
-    if (elapsed < targetSeconds * 2) return "#22c55e";     // Green (goal to 2x)
-    if (elapsed < targetSeconds * 3) return "#eab308";     // Gold (2x to 3x)
-    if (elapsed < targetSeconds * 4) return "#a855f7";     // Purple (3x to 4x)
-    return "#f97316";                                       // Orange (4x+)
+    if (elapsed < targetSeconds) return "#3b82f6";
+    if (elapsed < targetSeconds * 2) return "#22c55e";
+    if (elapsed < targetSeconds * 3) return "#eab308";
+    if (elapsed < targetSeconds * 4) return "#a855f7";
+    return "#f97316";
   };
 
   const formatTime = (seconds) => {
@@ -639,7 +649,7 @@ export default function PlankTimer({
         />
       )}
 
-      {/* Confetti — renders behind the banner, above the timer */}
+      {/* Confetti */}
       {showConfetti && activeMilestone && (
         <Confetti
           style={{ position: "fixed", top: 0, left: 0, zIndex: 1010, pointerEvents: "none" }}
@@ -652,7 +662,7 @@ export default function PlankTimer({
         />
       )}
 
-      {/* Milestone Banner — top of screen, non-blocking */}
+      {/* Milestone Banner */}
       {activeMilestone && (
         <div
           style={{
@@ -839,12 +849,10 @@ export default function PlankTimer({
               width: "100%",
               maxWidth: "500px",
               padding: "0 20px",
-              // Push content down when milestone banner is showing
               marginTop: activeMilestone ? "90px" : "0",
               transition: "margin-top 0.4s ease",
             }}
           >
-            {/* Subtitle */}
             <div
               style={{
                 fontSize: "20px",
@@ -855,15 +863,8 @@ export default function PlankTimer({
               Day {day} challenge Goal: {targetSeconds} seconds
             </div>
 
-            {/* PAUSED: tip + recovery — consolidated above the timer */}
             {stage === "paused" && (
-              <div
-                style={{
-                  marginBottom: "20px",
-                  textAlign: "center",
-                }}
-              >
-                {/* Recovery tip with randomized emoji */}
+              <div style={{ marginBottom: "20px", textAlign: "center" }}>
                 <div
                   style={{
                     fontSize: "34px",
@@ -875,7 +876,6 @@ export default function PlankTimer({
                 >
                   {recoveryEmoji} {recoveryTip}
                 </div>
-                {/* Recovery remaining — 80px dominant, turns red under 10s */}
                 <div
                   style={{
                     fontSize: "80px",
@@ -890,7 +890,6 @@ export default function PlankTimer({
               </div>
             )}
 
-            {/* Plank Timer — 120px active, 48px when paused with stacked label */}
             {stage === "paused" ? (
               <div style={{ marginBottom: "32px" }}>
                 <div
@@ -945,11 +944,7 @@ export default function PlankTimer({
                     <button
                       className="btn btn--primary"
                       onClick={handleDone}
-                      style={{
-                        fontSize: "24px",
-                        padding: "20px 40px",
-                        fontWeight: "bold",
-                      }}
+                      style={{ fontSize: "24px", padding: "20px 40px", fontWeight: "bold" }}
                     >
                       ✓ Done
                     </button>
@@ -969,11 +964,7 @@ export default function PlankTimer({
                 <button
                   className="btn btn--primary"
                   onClick={handleResume}
-                  style={{
-                    fontSize: "24px",
-                    padding: "20px 40px",
-                    fontWeight: "bold",
-                  }}
+                  style={{ fontSize: "24px", padding: "20px 40px", fontWeight: "bold" }}
                 >
                   Resume
                 </button>
@@ -988,10 +979,7 @@ export default function PlankTimer({
             onClick={handleStillGoingPressed}
             style={{
               position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
+              top: 0, left: 0, right: 0, bottom: 0,
               backgroundColor: "#dc2626",
               display: "flex",
               flexDirection: "column",
@@ -1001,46 +989,16 @@ export default function PlankTimer({
               zIndex: 1002,
             }}
           >
-            <div
-              style={{
-                fontSize: "48px",
-                fontWeight: "bold",
-                color: "white",
-                marginBottom: "20px",
-                textAlign: "center",
-                padding: "0 20px",
-              }}
-            >
+            <div style={{ fontSize: "48px", fontWeight: "bold", color: "white", marginBottom: "20px", textAlign: "center", padding: "0 20px" }}>
               Still crushing it? Tap here!
             </div>
-            <div
-              style={{
-                fontSize: "20px",
-                color: "white",
-                marginBottom: "40px",
-                opacity: 0.9,
-              }}
-            >
+            <div style={{ fontSize: "20px", color: "white", marginBottom: "40px", opacity: 0.9 }}>
               (Tap anywhere)
             </div>
-            <div
-              style={{
-                fontSize: "80px",
-                fontWeight: "bold",
-                color: "white",
-                textAlign: "center",
-              }}
-            >
+            <div style={{ fontSize: "80px", fontWeight: "bold", color: "white", textAlign: "center" }}>
               {stillGoingCountdown}
             </div>
-            <div
-              style={{
-                fontSize: "24px",
-                color: "white",
-                marginTop: "10px",
-                opacity: 0.9,
-              }}
-            >
+            <div style={{ fontSize: "24px", color: "white", marginTop: "10px", opacity: 0.9 }}>
               seconds
             </div>
           </div>
@@ -1048,93 +1006,58 @@ export default function PlankTimer({
 
         {/* KEEP TIME OR DO-OVER SCREEN */}
         {stage === "keepRedoScreen" && (
-          <div
-            style={{
-              textAlign: "center",
-              width: "100%",
-              maxWidth: "500px",
-              padding: "0 20px",
-            }}
-          >
-            <h2 style={{ color: "var(--color-text)", marginBottom: "20px" }}>
-              Your Time
-            </h2>
+          <div style={{ textAlign: "center", width: "100%", maxWidth: "500px", padding: "0 20px" }}>
+            <h2 style={{ color: "var(--color-text)", marginBottom: "20px" }}>Your Time</h2>
             <div
               style={{
                 fontSize: "80px",
                 fontWeight: "bold",
-                color:
-                  frozenTime >= targetSeconds
-                    ? "var(--color-success)"
-                    : "var(--color-warning)",
+                color: frozenTime >= targetSeconds ? "var(--color-success)" : "var(--color-warning)",
                 marginBottom: "40px",
               }}
             >
               {formatTime(frozenTime)}
             </div>
             {frozenTime >= targetSeconds ? (
-              <p
-                style={{
-                  fontSize: "18px",
-                  color: "var(--color-text)",
-                  marginBottom: "40px",
-                }}
-              >
+              <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
                 🎉 You met your goal of {targetSeconds} seconds!
               </p>
             ) : (
-              <p
-                style={{
-                  fontSize: "18px",
-                  color: "var(--color-text)",
-                  marginBottom: "40px",
-                }}
-              >
+              <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
                 Goal: {targetSeconds} seconds
               </p>
             )}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "16px",
-                alignItems: "stretch",
-                width: "100%",
-              }}
-            >
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", alignItems: "stretch", width: "100%" }}>
               <button
                 className="btn btn--primary"
                 onClick={handleKeepTime}
+                disabled={isSubmitting}
                 style={{
                   fontSize: "24px",
                   padding: "20px 40px",
                   fontWeight: "bold",
+                  opacity: isSubmitting ? 0.7 : 1,
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
                 }}
               >
-                ✓ Keep Time
+                {isSubmitting ? "Saving..." : "✓ Keep Time"}
               </button>
               <button
                 className="btn btn--secondary"
                 onClick={handleRedoAttempt}
-                disabled={attemptNumber >= 3}
+                disabled={attemptNumber >= 3 || isSubmitting}
                 style={{
                   fontSize: "20px",
                   padding: "16px 32px",
-                  opacity: attemptNumber >= 3 ? 0.5 : 1,
-                  cursor: attemptNumber >= 3 ? "not-allowed" : "pointer",
+                  opacity: attemptNumber >= 3 || isSubmitting ? 0.5 : 1,
+                  cursor: attemptNumber >= 3 || isSubmitting ? "not-allowed" : "pointer",
                 }}
               >
                 {attemptNumber >= 3 ? "No Do-Overs Left" : "🔄 Do-Over"}
               </button>
             </div>
             {attemptNumber < 3 && (
-              <p
-                style={{
-                  fontSize: "14px",
-                  color: "var(--color-text-secondary)",
-                  marginTop: "20px",
-                }}
-              >
+              <p style={{ fontSize: "14px", color: "var(--color-text-secondary)", marginTop: "20px" }}>
                 {3 - attemptNumber}{" "}
                 {3 - attemptNumber === 1 ? "do-over" : "do-overs"} remaining
               </p>
@@ -1146,28 +1069,14 @@ export default function PlankTimer({
         {stage === "complete" && (
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "80px", marginBottom: "20px" }}>🎉</div>
-            <h2
-              style={{ color: "var(--color-success)", marginBottom: "16px" }}
-            >
+            <h2 style={{ color: "var(--color-success)", marginBottom: "16px" }}>
               Day {day} challenge Complete!
             </h2>
-            <p
-              style={{
-                fontSize: "24px",
-                color: "var(--color-text)",
-                fontWeight: "600",
-              }}
-            >
+            <p style={{ fontSize: "24px", color: "var(--color-text)", fontWeight: "600" }}>
               {formatTime(frozenTime)}
             </p>
             {!hasPaused && frozenTime > targetSeconds && (
-              <p
-                style={{
-                  fontSize: "18px",
-                  color: "var(--color-primary)",
-                  marginTop: "12px",
-                }}
-              >
+              <p style={{ fontSize: "18px", color: "var(--color-primary)", marginTop: "12px" }}>
                 {getCelebrationMessage(frozenTime)}
               </p>
             )}
@@ -1178,17 +1087,10 @@ export default function PlankTimer({
         {stage === "failed" && (
           <div style={{ textAlign: "center", padding: "20px" }}>
             <div style={{ fontSize: "60px", marginBottom: "20px" }}>📝</div>
-            <h2
-              style={{ color: "var(--color-text)", marginBottom: "12px" }}
-            >
+            <h2 style={{ color: "var(--color-text)", marginBottom: "12px" }}>
               Day {day} challenge logged - tomorrow's a new opportunity!
             </h2>
-            <p
-              style={{
-                color: "var(--color-text-secondary)",
-                fontSize: "18px",
-              }}
-            >
+            <p style={{ color: "var(--color-text-secondary)", fontSize: "18px" }}>
               Ready to crush Day {day + 1} challenge tomorrow!
             </p>
           </div>
