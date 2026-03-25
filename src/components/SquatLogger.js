@@ -1,5 +1,5 @@
 // src/components/SquatLogger.js
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
 import {
   doc,
@@ -29,10 +29,15 @@ export default function SquatLogger({
 }) {
   const [squatCount, setSquatCount] = useState("");
   const [isLogging, setIsLogging] = useState(false);
-  
+
   // Badge celebration
   const [newBadges, setNewBadges] = useState([]);
   const [showBadgeCelebration, setShowBadgeCelebration] = useState(false);
+
+  // Scroll to top on mount so all overlays/popups are fully visible
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   const handleLogSquats = async (e) => {
     e.preventDefault();
@@ -112,7 +117,7 @@ export default function SquatLogger({
         if (badgeResult.newBadges && badgeResult.newBadges.length > 0) {
           setNewBadges(badgeResult.newBadges);
           setShowBadgeCelebration(true);
-          
+
           // Delay completion to show celebration
           setTimeout(() => {
             setSquatCount("");
