@@ -15,7 +15,7 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
   const totalDaysAttempted = userChallenge.totalDaysAttempted || 0;
   const successfulDaysCount = userChallenge.successfulDaysCount || 0;
   const numberOfDays = challengeDetails.numberOfDays;
-  const lastCompletedDay = userChallenge.lastCompletedDay || 0;
+  const lastCompletedDay = userChallenge.lastCompletedDay || 0; // eslint-disable-line no-unused-vars
 
   // Format seconds as "Xm Ys" or "Xs"
   const formatSeconds = (sec) => {
@@ -142,7 +142,7 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
               : "—"}
           </li>
           <li style={{ marginBottom: "5px" }}>
-            <strong>Days Completed:</strong> {lastCompletedDay} of {numberOfDays}
+            <strong>Days Completed:</strong> {successfulDaysCount} of {numberOfDays}
           </li>
           {isAwaitingGlobalEnd ? (
             <li style={{ marginBottom: "5px", fontStyle: "italic" }}>
