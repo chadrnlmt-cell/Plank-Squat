@@ -187,6 +187,7 @@ export default function CompletedChallenges({ user }) {
       for (let i = 900; i <= 18000; i += 900) timeMilestones.push(i);
 
       const colVisible = {
+        highestStreakBadge: participants.some(p => p.badges.highestStreakBadge > 0),
         streak3:          participants.some(p => (p.badges.completedStreakBadges[3]  || 0) > 0),
         streak7:          participants.some(p => (p.badges.completedStreakBadges[7]  || 0) > 0),
         streak14:         participants.some(p => (p.badges.completedStreakBadges[14] || 0) > 0),
@@ -382,7 +383,7 @@ export default function CompletedChallenges({ user }) {
                         <th style={thRight}>Days Done</th>
                         <th style={thRight}>Days Missed</th>
                         <th style={thRight}>Success %</th>
-                        <th style={thStyle}>Highest Streak</th>
+                        {cv.highestStreakBadge && <th style={thStyle}>Highest Streak</th>}
                         {cv.streak3    && <th style={thStyle}>3-Day</th>}
                         {cv.streak7    && <th style={thStyle}>7-Day</th>}
                         {cv.streak14   && <th style={thStyle}>14-Day</th>}
@@ -411,7 +412,7 @@ export default function CompletedChallenges({ user }) {
                           <td style={tdRight}>{participant.daysCompleted}</td>
                           <td style={tdRight}>{participant.missedDays}</td>
                           <td style={tdRight}>{participant.successRate.toFixed(1)}%</td>
-                          <td style={tdStyle}>{participant.badges.highestStreakBadge > 0 ? `${participant.badges.highestStreakBadge}d` : "-"}</td>
+                          {cv.highestStreakBadge && <td style={tdStyle}>{participant.badges.highestStreakBadge > 0 ? `${participant.badges.highestStreakBadge}d` : "-"}</td>}
                           {cv.streak3    && <td style={tdStyle}>{participant.badges.completedStreakBadges[3]  || 0}</td>}
                           {cv.streak7    && <td style={tdStyle}>{participant.badges.completedStreakBadges[7]  || 0}</td>}
                           {cv.streak14   && <td style={tdStyle}>{participant.badges.completedStreakBadges[14] || 0}</td>}
@@ -440,7 +441,7 @@ export default function CompletedChallenges({ user }) {
                           <td style={tdStyle}>-</td>
                           <td style={tdRight}>{aggregateData.totalMissedDays}</td>
                           <td style={tdStyle}>-</td>
-                          <td style={tdStyle}>-</td>
+                          {cv.highestStreakBadge && <td style={tdStyle}>-</td>}
                           {cv.streak3    && <td style={tdStyle}>{aggregateData.badges.streak3}</td>}
                           {cv.streak7    && <td style={tdStyle}>{aggregateData.badges.streak7}</td>}
                           {cv.streak14   && <td style={tdStyle}>{aggregateData.badges.streak14}</td>}
