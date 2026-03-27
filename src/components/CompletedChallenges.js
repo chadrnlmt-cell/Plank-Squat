@@ -187,16 +187,17 @@ export default function CompletedChallenges({ user }) {
       for (let i = 900; i <= 18000; i += 900) timeMilestones.push(i);
 
       const colVisible = {
-        streak3:     participants.some(p => (p.badges.completedStreakBadges[3]  || 0) > 0),
-        streak7:     participants.some(p => (p.badges.completedStreakBadges[7]  || 0) > 0),
-        streak14:    participants.some(p => (p.badges.completedStreakBadges[14] || 0) > 0),
-        streak21:    participants.some(p => (p.badges.completedStreakBadges[21] || 0) > 0),
-        streak28:    participants.some(p => (p.badges.completedStreakBadges[28] || 0) > 0),
-        double:      participants.some(p => p.badges.doubleBadgeCount > 0),
-        triple:      participants.some(p => p.badges.tripleBadgeCount > 0),
-        quadruple:   participants.some(p => p.badges.quadrupleBadgeCount > 0),
-        newLegacyStreak: participants.some(p => p.newLegacyStreakBadge !== null),
-        newLegacyTime:   participants.some(p => p.newLegacyTimeBadge !== null),
+        streak3:          participants.some(p => (p.badges.completedStreakBadges[3]  || 0) > 0),
+        streak7:          participants.some(p => (p.badges.completedStreakBadges[7]  || 0) > 0),
+        streak14:         participants.some(p => (p.badges.completedStreakBadges[14] || 0) > 0),
+        streak21:         participants.some(p => (p.badges.completedStreakBadges[21] || 0) > 0),
+        streak28:         participants.some(p => (p.badges.completedStreakBadges[28] || 0) > 0),
+        double:           participants.some(p => p.badges.doubleBadgeCount > 0),
+        triple:           participants.some(p => p.badges.tripleBadgeCount > 0),
+        quadruple:        participants.some(p => p.badges.quadrupleBadgeCount > 0),
+        newLegacyStreak:  participants.some(p => p.newLegacyStreakBadge !== null),
+        newLegacyTime:    participants.some(p => p.newLegacyTimeBadge !== null),
+        highestTimeBadge: participants.some(p => p.badges.highestTimeBadge > 0),
       };
 
       const timeMsVisible = {};
@@ -392,14 +393,10 @@ export default function CompletedChallenges({ user }) {
                         {cv.quadruple  && <th style={thStyle}>4x</th>}
                         {cv.newLegacyStreak && <th style={{ ...thStyle, backgroundColor: "#fef3c7" }}>New Legacy Streak Badge</th>}
                         {cv.newLegacyTime   && <th style={{ ...thStyle, backgroundColor: "#d1fae5" }}>New Legacy Time Badge</th>}
-                        {challengeDetails.type === "plank" && (
-                          <>
-                            <th style={thStyle}>Highest Time</th>
-                            {timeMilestones.filter(ms => tmv[ms]).map(ms => (
-                              <th key={ms} style={thStyle}>{formatTimeShort(ms)}</th>
-                            ))}
-                          </>
-                        )}
+                        {cv.highestTimeBadge && <th style={thStyle}>Time Milestone</th>}
+                        {challengeDetails.type === "plank" && timeMilestones.filter(ms => tmv[ms]).map(ms => (
+                          <th key={ms} style={thStyle}>{formatTimeShort(ms)}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
@@ -425,14 +422,10 @@ export default function CompletedChallenges({ user }) {
                           {cv.quadruple  && <td style={tdStyle}>{participant.badges.quadrupleBadgeCount}</td>}
                           {cv.newLegacyStreak && <td style={{ ...tdStyle, backgroundColor: "#fef9c3" }}>{participant.newLegacyStreakBadge !== null ? `${participant.newLegacyStreakBadge}-day Run` : "-"}</td>}
                           {cv.newLegacyTime   && <td style={{ ...tdStyle, backgroundColor: "#ecfdf5" }}>{participant.newLegacyTimeBadge !== null ? formatTimeShort(participant.newLegacyTimeBadge) : "-"}</td>}
-                          {challengeDetails.type === "plank" && (
-                            <>
-                              <td style={tdStyle}>{participant.badges.highestTimeBadge > 0 ? formatTimeShort(participant.badges.highestTimeBadge) : "-"}</td>
-                              {timeMilestones.filter(ms => tmv[ms]).map(ms => (
-                                <td key={ms} style={tdStyle}>{participant.badges.completedTimeBadges[ms] || 0}</td>
-                              ))}
-                            </>
-                          )}
+                          {cv.highestTimeBadge && <td style={tdStyle}>{participant.badges.highestTimeBadge > 0 ? formatTimeShort(participant.badges.highestTimeBadge) : "-"}</td>}
+                          {challengeDetails.type === "plank" && timeMilestones.filter(ms => tmv[ms]).map(ms => (
+                            <td key={ms} style={tdStyle}>{participant.badges.completedTimeBadges[ms] || 0}</td>
+                          ))}
                         </tr>
                       ))}
 
@@ -458,14 +451,10 @@ export default function CompletedChallenges({ user }) {
                           {cv.quadruple  && <td style={tdStyle}>{aggregateData.badges.quadruple}</td>}
                           {cv.newLegacyStreak && <td style={{ ...tdStyle, backgroundColor: "#fef9c3" }}>-</td>}
                           {cv.newLegacyTime   && <td style={{ ...tdStyle, backgroundColor: "#ecfdf5" }}>-</td>}
-                          {challengeDetails.type === "plank" && (
-                            <>
-                              <td style={tdStyle}>-</td>
-                              {timeMilestones.filter(ms => tmv[ms]).map(ms => (
-                                <td key={ms} style={tdStyle}>{aggregateData.badges[`time${ms}`] || 0}</td>
-                              ))}
-                            </>
-                          )}
+                          {cv.highestTimeBadge && <td style={tdStyle}>-</td>}
+                          {challengeDetails.type === "plank" && timeMilestones.filter(ms => tmv[ms]).map(ms => (
+                            <td key={ms} style={tdStyle}>{aggregateData.badges[`time${ms}`] || 0}</td>
+                          ))}
                         </tr>
                       )}
                     </tbody>
