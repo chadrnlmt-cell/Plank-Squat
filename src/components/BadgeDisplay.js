@@ -223,30 +223,65 @@ function formatLegacyTime(seconds) {
   return `${mins}m`;
 }
 
-function TrophyCard({ label, sublabel, color = "#eab308", bgColor = "#fef9c3", borderColor = "#eab308", emoji = "🏆" }) {
+// TrophyCard with optional ×count notification dot (Option C)
+function TrophyCard({
+  label,
+  sublabel,
+  color = "#eab308",
+  bgColor = "#fef9c3",
+  borderColor = "#eab308",
+  emoji = "🏆",
+  count = 1,
+}) {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        width: "80px",
-        minHeight: "88px",
-        backgroundColor: bgColor,
-        border: `2px solid ${borderColor}`,
-        borderRadius: "12px",
-        padding: "8px 4px",
-        boxShadow: "0 2px 8px rgba(234,179,8,0.18)",
-      }}
-    >
-      <div style={{ fontSize: "22px", lineHeight: 1, marginBottom: "4px" }}>{emoji}</div>
-      <div style={{ fontSize: "26px", fontWeight: "900", color: color, lineHeight: 1, letterSpacing: "-0.5px" }}>
-        {label}
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          width: "80px",
+          minHeight: "88px",
+          backgroundColor: bgColor,
+          border: `2px solid ${borderColor}`,
+          borderRadius: "12px",
+          padding: "8px 4px",
+          boxShadow: "0 2px 8px rgba(234,179,8,0.18)",
+        }}
+      >
+        <div style={{ fontSize: "22px", lineHeight: 1, marginBottom: "4px" }}>{emoji}</div>
+        <div style={{ fontSize: "26px", fontWeight: "900", color: color, lineHeight: 1, letterSpacing: "-0.5px" }}>
+          {label}
+        </div>
+        {sublabel && (
+          <div style={{ fontSize: "11px", fontWeight: "600", color: color, opacity: 0.8, marginTop: "3px", textAlign: "center", lineHeight: 1.2 }}>
+            {sublabel}
+          </div>
+        )}
       </div>
-      {sublabel && (
-        <div style={{ fontSize: "11px", fontWeight: "600", color: color, opacity: 0.8, marginTop: "3px", textAlign: "center", lineHeight: 1.2 }}>
-          {sublabel}
+      {count > 1 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "-6px",
+            right: "-6px",
+            backgroundColor: "#ea580c",
+            color: "white",
+            fontSize: "11px",
+            fontWeight: "700",
+            borderRadius: "999px",
+            minWidth: "20px",
+            height: "20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0 4px",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+            lineHeight: 1,
+          }}
+        >
+          ×{count}
         </div>
       )}
     </div>
@@ -260,7 +295,7 @@ export function LegacyBadgeDisplay({
   earnedTimeBadges = [],
   totalPlankSeconds = 0,
 }) {
-  // Lifetime run milestones: unchanged
+  // Lifetime run milestones: 30-day steps up to 365
   const RUN_MILESTONES = (() => {
     const m = [];
     for (let i = 30; i <= 365; i += 30) m.push(i);
@@ -268,7 +303,7 @@ export function LegacyBadgeDisplay({
     return m;
   })();
 
-  // Lifetime time milestones: unchanged — 30-min steps up to 10 hours
+  // Lifetime time milestones: 30-min steps up to 10 hours
   const TIME_MILESTONES = (() => {
     const m = [];
     for (let i = 1800; i <= 36000; i += 1800) m.push(i);
@@ -286,16 +321,46 @@ export function LegacyBadgeDisplay({
   const nextTimeMilestone = TIME_MILESTONES.find((m) => !timeValues.includes(m)) || null;
 
   const hasEarnedRunBadges = runValues.length > 0;
+  // Only show plank time section if player has plank data
+  const hasPlankData = totalPlankSeconds > 0 || timeValues.length > 0;
   const hasEarnedTimeBadges = timeValues.length > 0;
+
+  // Collapse duplicate run badge values into a count map, sorted highest first
+  const runBadgeMap = runValues.reduce((acc, val) => {
+    acc[val] = (acc[val] || 0) + 1;
+    return acc;
+  }, {});
+  const uniqueRunMilestones = Object.keys(runBadgeMap).map(Number).sort((a, b) => b - a);
+
+  // Top 3 time trophies, highest first
+  const uniqueTimeValues = [...new Set(timeValues)].sort((a, b) => b - a);
+  const top3TimeValues = uniqueTimeValues.slice(0, 3);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
-      {/* Best Consecutive Run */}
+      {/* 🔥 Lifetime Streak */}
       <div>
         <div style={{ fontSize: "13px", fontWeight: "700", marginBottom: "10px", color: "#92400e", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          🔥 Best Consecutive Run
+          🔥 Lifetime Streak
         </div>
+
+        {/* Live current badge level trophy — replaces as milestones are hit */}
+        {consecutiveRunBadgeLevel > 0 && (
+          <div style={{ marginBottom: "12px" }}>
+            <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", color: "#92400e" }}>
+              Current Badge
+            </div>
+            <TrophyCard
+              emoji="🏆"
+              label={`${consecutiveRunBadgeLevel}`}
+              sublabel="days"
+              color="#92400e"
+              bgColor="#fef3c7"
+              borderColor="#eab308"
+            />
+          </div>
+        )}
 
         <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginBottom: "12px" }}>
           <span style={{ fontSize: "40px", fontWeight: "900", color: "#eab308", lineHeight: 1 }}>
@@ -322,9 +387,18 @@ export function LegacyBadgeDisplay({
         )}
 
         {hasEarnedRunBadges ? (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-            {[...runValues].sort((a, b) => b - a).map((milestone) => (
-              <TrophyCard key={milestone} emoji="🏆" label={`${milestone}`} sublabel="days" color="#92400e" bgColor="#fef3c7" borderColor="#eab308" />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "14px" }}>
+            {uniqueRunMilestones.map((milestone) => (
+              <TrophyCard
+                key={milestone}
+                emoji="🏆"
+                label={`${milestone}`}
+                sublabel="days"
+                color="#92400e"
+                bgColor="#fef3c7"
+                borderColor="#eab308"
+                count={runBadgeMap[milestone]}
+              />
             ))}
           </div>
         ) : (
@@ -334,58 +408,69 @@ export function LegacyBadgeDisplay({
         )}
       </div>
 
-      {/* Lifetime Plank Time */}
-      <div>
-        <div style={{ fontSize: "13px", fontWeight: "700", marginBottom: "10px", color: "#065f46", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          ⏱️ Lifetime Plank Time
-        </div>
+      {/* ⏱️ Lifetime Plank Time — hidden for squat-only players */}
+      {hasPlankData && (
+        <div>
+          <div style={{ fontSize: "13px", fontWeight: "700", marginBottom: "10px", color: "#065f46", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            ⏱️ Lifetime Plank Time
+          </div>
 
-        <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginBottom: "12px" }}>
-          <span style={{ fontSize: "32px", fontWeight: "900", color: "#059669", lineHeight: 1 }}>
-            {formatLegacyTime(totalPlankSeconds)}
-          </span>
-          <span style={{ fontSize: "13px", color: "#065f46" }}>total</span>
-        </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginBottom: "12px" }}>
+            <span style={{ fontSize: "32px", fontWeight: "900", color: "#059669", lineHeight: 1 }}>
+              {formatLegacyTime(totalPlankSeconds)}
+            </span>
+            <span style={{ fontSize: "13px", color: "#065f46" }}>total</span>
+          </div>
 
-        {nextTimeMilestone && (
-          <div style={{ marginBottom: "14px" }}>
-            <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#065f46" }}>
-              Next trophy: {formatLegacyTime(nextTimeMilestone)}
+          {nextTimeMilestone && (
+            <div style={{ marginBottom: "14px" }}>
+              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#065f46" }}>
+                Next trophy: {formatLegacyTime(nextTimeMilestone)}
+              </div>
+              <div style={{ position: "relative", width: "100%", height: "36px", backgroundColor: "#d1fae5", borderRadius: "8px", overflow: "hidden", border: "2px solid #a7f3d0" }}>
+                {(() => {
+                  const lastEarned = timeValues.length > 0 ? Math.max(...timeValues) : 0;
+                  const rangeStart = lastEarned;
+                  const rangeEnd = nextTimeMilestone;
+                  const progress = Math.min(
+                    ((totalPlankSeconds - rangeStart) / (rangeEnd - rangeStart)) * 100,
+                    100
+                  );
+                  return (
+                    <>
+                      <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${progress}%`, background: "linear-gradient(90deg, #34d399, #059669)", transition: "width 0.5s ease" }} />
+                      <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: "#064e3b", textShadow: "0 1px 2px rgba(255,255,255,0.7)" }}>
+                        {formatLegacyTime(totalPlankSeconds)}/{formatLegacyTime(nextTimeMilestone)}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
-            <div style={{ position: "relative", width: "100%", height: "36px", backgroundColor: "#d1fae5", borderRadius: "8px", overflow: "hidden", border: "2px solid #a7f3d0" }}>
-              {(() => {
-                const lastEarned = timeValues.length > 0 ? Math.max(...timeValues) : 0;
-                const rangeStart = lastEarned;
-                const rangeEnd = nextTimeMilestone;
-                const progress = Math.min(
-                  ((totalPlankSeconds - rangeStart) / (rangeEnd - rangeStart)) * 100,
-                  100
-                );
-                return (
-                  <>
-                    <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${progress}%`, background: "linear-gradient(90deg, #34d399, #059669)", transition: "width 0.5s ease" }} />
-                    <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", color: "#064e3b", textShadow: "0 1px 2px rgba(255,255,255,0.7)" }}>
-                      {formatLegacyTime(totalPlankSeconds)}/{formatLegacyTime(nextTimeMilestone)}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-        )}
+          )}
 
-        {hasEarnedTimeBadges ? (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-            {[...timeValues].sort((a, b) => b - a).map((milestone) => (
-              <TrophyCard key={milestone} emoji="⏱️" label={formatLegacyTime(milestone)} sublabel="plank" color="#064e3b" bgColor="#d1fae5" borderColor="#34d399" />
-            ))}
-          </div>
-        ) : (
-          <div style={{ fontSize: "13px", color: "#059669", fontStyle: "italic" }}>
-            Reach 30 minutes of total plank time to earn your first trophy!
-          </div>
-        )}
-      </div>
+          {hasEarnedTimeBadges ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "14px" }}>
+              {top3TimeValues.map((milestone) => (
+                <TrophyCard
+                  key={milestone}
+                  emoji="⏱️"
+                  label={formatLegacyTime(milestone)}
+                  sublabel="plank"
+                  color="#064e3b"
+                  bgColor="#d1fae5"
+                  borderColor="#34d399"
+                  count={timeValues.filter((v) => v === milestone).length}
+                />
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: "13px", color: "#059669", fontStyle: "italic" }}>
+              Reach 30 minutes of total plank time to earn your first trophy!
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
