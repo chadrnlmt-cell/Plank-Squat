@@ -24,7 +24,7 @@ import Profile from "./components/Profile";
 import Banner from "./components/Banner";
 import BadgeDisplay from "./components/BadgeDisplay";
 import ChallengeGuide from "./components/ChallengeGuide";
-import { getChallengeBadges, breakConsecutiveRun } from "./badgeHelpers";
+import { getChallengeBadges, breakConsecutiveRun, finalizeAllStreaksOnChallengeEnd } from "./badgeHelpers";
 import {
   getPhoenixDate,
   getChallengeDayFromStart,
@@ -182,9 +182,14 @@ export default function App() {
   };
 
   // Builds and writes the leaderboardHistory document for a challenge.
+  // Also finalizes all streak/time/legacy badges for every participant.
   // Mirrors the logic in AdminPanel.js archiveLeaderboardBeforeDeactivate
   // so both manual and automatic archives produce identical records.
   const runChallengeArchive = async (challenge) => {
+    // Finalize streak, time, and legacy attribution badges for all participants.
+    // Must run before the leaderboard snapshot so badge data is fresh.
+    await finalizeAllStreaksOnChallengeEnd(challenge.id);
+
     // Get all challengeUserStats for this challenge
     const statsQuery = query(
       collection(db, "challengeUserStats"),
