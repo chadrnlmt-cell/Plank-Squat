@@ -466,6 +466,15 @@ export default function PlankTimer({
     onComplete(true);
   };
 
+  // Format seconds for display: <60s shows "30s", >=60s shows "1:15"
+  const formatGoalTime = (seconds) => {
+    const s = Number(seconds) || 0;
+    if (s < 60) return `${s}s`;
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
   const getCelebrationMessage = (actualValue) => {
     const overAmount = actualValue - targetSeconds;
     if (overAmount >= 15) {
@@ -473,7 +482,8 @@ export default function PlankTimer({
         HIGH_CELEBRATIONS[
           Math.floor(Math.random() * HIGH_CELEBRATIONS.length)
         ];
-      return `+${overAmount} seconds over goal! ${msg}`;
+      const overDisplay = formatGoalTime(overAmount);
+      return `+${overDisplay} over goal! ${msg}`;
     } else {
       return STANDARD_CELEBRATIONS[
         Math.floor(Math.random() * STANDARD_CELEBRATIONS.length)
@@ -865,7 +875,7 @@ export default function PlankTimer({
                 marginBottom: "20px",
               }}
             >
-              Day {day} challenge Goal: {targetSeconds} seconds
+              Day {day} challenge — Goal: {formatGoalTime(targetSeconds)}
             </div>
 
             {stage === "paused" && (
@@ -1025,11 +1035,11 @@ export default function PlankTimer({
             </div>
             {frozenTime >= targetSeconds ? (
               <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
-                🎉 You met your goal of {targetSeconds} seconds!
+                🎉 You met your goal of {formatGoalTime(targetSeconds)}!
               </p>
             ) : (
               <p style={{ fontSize: "18px", color: "var(--color-text)", marginBottom: "40px" }}>
-                Goal: {targetSeconds} seconds
+                Goal: {formatGoalTime(targetSeconds)}
               </p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: "16px", alignItems: "stretch", width: "100%" }}>
