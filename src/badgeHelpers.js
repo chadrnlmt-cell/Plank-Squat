@@ -387,8 +387,19 @@ export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
         const challengeBadges = getChallengeBadgeData(statsData, challengeId);
         const legacy = getLegacyBadgeData(statsData);
 
+        // ── Legacy attribution: always run regardless of badge levels ──
+        // Stamps any floating challengeId: null badges → this challengeId
+        // so admin reports can show which challenge they were earned in.
+        let legacyRunBadges = legacy.earnedConsecutiveRunBadges.map((item) =>
+          item.challengeId === null ? { ...item, challengeId } : item
+        );
+        let legacyTimeBadges = legacy.earnedTimeBadges.map((item) =>
+          item.challengeId === null ? { ...item, challengeId } : item
+        );
+
         const updates = {};
 
+        // ── Streak badge finalization: only write if there's something to move ──
         if (challengeBadges.currentStreakBadgeLevel > 0) {
           const level = challengeBadges.currentStreakBadgeLevel;
           const updated = { ...challengeBadges.completedStreakBadges };
@@ -397,6 +408,7 @@ export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
           updates[`badges.challenges.${challengeId}.currentStreakBadgeLevel`] = 0;
         }
 
+        // ── Time badge finalization: only write if there's something to move ──
         if (challengeBadges.currentTimeBadgeLevel > 0) {
           const level = challengeBadges.currentTimeBadgeLevel;
           const updatedTime = { ...challengeBadges.completedTimeBadges };
@@ -405,20 +417,12 @@ export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
           updates[`badges.challenges.${challengeId}.currentTimeBadgeLevel`] = 0;
         }
 
-        let legacyRunBadges = legacy.earnedConsecutiveRunBadges.map((item) =>
-          item.challengeId === null ? { ...item, challengeId } : item
-        );
-        let legacyTimeBadges = legacy.earnedTimeBadges.map((item) =>
-          item.challengeId === null ? { ...item, challengeId } : item
-        );
-
+        // Always include legacy attribution and timestamp
         updates["badges.legacy.earnedConsecutiveRunBadges"] = legacyRunBadges;
         updates["badges.legacy.earnedTimeBadges"] = legacyTimeBadges;
         updates["updatedAt"] = serverTimestamp();
 
-        if (Object.keys(updates).length > 1) {
-          await updateDoc(userStatsRef, updates);
-        }
+        await updateDoc(userStatsRef, updates);
 
         const legacyRunAtEnd = legacy.consecutiveRun || 0;
         const legacyTimeBadgeCountAtEnd = legacy.earnedTimeBadges.length || 0;
