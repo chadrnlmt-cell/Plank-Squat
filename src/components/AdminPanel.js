@@ -35,7 +35,6 @@ export default function AdminPanel({ user }) {
 
   const ADMIN_EMAIL = "chadrnlmt@gmail.com";
   const isAdmin = user?.email === ADMIN_EMAIL;
-  console.log("ADMIN CHECK", user?.email, ADMIN_EMAIL, isAdmin);
 
   const defaultFormState = {
     name: "",
@@ -297,7 +296,6 @@ export default function AdminPanel({ user }) {
         teamStandings,
       });
 
-      console.log("Leaderboard archived successfully");
       return true;
     } catch (error) {
       console.error("Error archiving leaderboard:", error);
