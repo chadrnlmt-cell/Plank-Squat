@@ -3,6 +3,15 @@ import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
 import { collection, addDoc, getDocs, query, where, Timestamp } from "firebase/firestore";
 
+// Format seconds: <60s shows "30s", >=60s shows "1:15"
+const formatGoalTime = (seconds) => {
+  const s = Number(seconds) || 0;
+  if (s < 60) return `${s}s`;
+  const mins = Math.floor(s / 60);
+  const secs = s % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+};
+
 export default function ChallengeCard({ challenge, onJoin, alreadyJoined }) {
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState("");
@@ -107,9 +116,21 @@ export default function ChallengeCard({ challenge, onJoin, alreadyJoined }) {
     return startingValue + (numberOfDays - 1) * incrementPerDay;
   };
 
-  // Get unit abbreviation
+  // Get unit abbreviation — for plank we use formatGoalTime, for squats plain reps
   const getUnit = () => {
-    return challenge.type === "plank" ? "sec" : "reps";
+    return challenge.type === "plank" ? "" : "reps";
+  };
+
+  // Format a value for display based on challenge type
+  const formatValue = (val) => {
+    if (challenge.type === "plank") return formatGoalTime(val);
+    return `${val} reps`;
+  };
+
+  // Format increment per day
+  const formatIncrement = (val) => {
+    if (challenge.type === "plank") return `+${val}s per day`;
+    return `+${val} reps per day`;
   };
 
   return (
@@ -199,16 +220,16 @@ export default function ChallengeCard({ challenge, onJoin, alreadyJoined }) {
           {/* Row 2: Starting and Final */}
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
             <span style={{ color: "#555" }}>
-              <strong>Starting:</strong> {challenge.startingValue} {getUnit()}
+              <strong>Starting:</strong> {formatValue(challenge.startingValue)}
             </span>
             <span style={{ color: "#555" }}>
-              <strong>Final:</strong> {calculateFinalValue()} {getUnit()}
+              <strong>Final:</strong> {formatValue(calculateFinalValue())}
             </span>
           </div>
 
           {/* Row 3: Increase (centered) */}
           <div style={{ textAlign: "center", color: "#555" }}>
-            <strong>Increase:</strong> +{challenge.incrementPerDay} {getUnit()} per day
+            <strong>Increase:</strong> {formatIncrement(challenge.incrementPerDay)}
           </div>
         </div>
 
