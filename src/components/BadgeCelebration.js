@@ -2,19 +2,32 @@
 import React, { useEffect } from "react";
 
 /**
- * Badge celebration modal - shows newly earned badges with animation
- * Auto-closes after 3 seconds
+ * Badge celebration modal - shows newly earned badges with animation.
+ * Auto-closes after 3 seconds UNLESS isLifetimeStreak=true,
+ * in which case it stays open until user taps "Awesome!".
  */
-export default function BadgeCelebration({ badges, onClose }) {
+export default function BadgeCelebration({ badges, onClose, isLifetimeStreak = false }) {
   useEffect(() => {
+    // No auto-close for lifetime streak milestones — user must tap Awesome
+    if (isLifetimeStreak) return;
+
     const timer = setTimeout(() => {
       onClose();
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [onClose]);
+  }, [onClose, isLifetimeStreak]);
 
   const getBadgeDisplay = (badge) => {
+    if (badge.type === "legacyRun") {
+      return {
+        emoji: "🏆",
+        title: `${badge.value}-Day Lifetime Streak!`,
+        subtitle: "Lifetime Achievement Unlocked",
+        color: "#f59e0b",
+      };
+    }
+
     if (badge.type === "streak") {
       return {
         emoji: "🔥",
@@ -84,7 +97,7 @@ export default function BadgeCelebration({ badges, onClose }) {
         style={{
           backgroundColor: "white",
           borderRadius: "16px",
-          padding: "40px",
+          padding: isLifetimeStreak ? "48px 40px" : "40px",
           maxWidth: "400px",
           width: "90%",
           boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
@@ -92,11 +105,23 @@ export default function BadgeCelebration({ badges, onClose }) {
         }}
       >
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: "48px", marginBottom: "20px", animation: "bounce 0.6s ease-in-out" }}>
-            🎉
+          <div
+            style={{
+              fontSize: isLifetimeStreak ? "64px" : "48px",
+              marginBottom: "20px",
+              animation: "bounce 0.6s ease-in-out",
+            }}
+          >
+            {isLifetimeStreak ? "🏆" : "🎉"}
           </div>
-          <h2 style={{ margin: "0 0 24px 0", color: "var(--color-text)", fontSize: "24px" }}>
-            New Badge{badges.length > 1 ? "s" : ""} Earned!
+          <h2
+            style={{
+              margin: "0 0 24px 0",
+              color: "var(--color-text)",
+              fontSize: isLifetimeStreak ? "28px" : "24px",
+            }}
+          >
+            {isLifetimeStreak ? "Lifetime Achievement!" : `New Badge${badges.length > 1 ? "s" : ""} Earned!`}
           </h2>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -106,19 +131,33 @@ export default function BadgeCelebration({ badges, onClose }) {
                 <div
                   key={index}
                   style={{
-                    padding: "20px",
+                    padding: isLifetimeStreak ? "24px" : "20px",
                     backgroundColor: "#f9fafb",
                     borderRadius: "12px",
                     border: `3px solid ${display.color}`,
                     animation: `slideInUp 0.4s ease-out ${index * 0.1}s backwards`,
                   }}
                 >
-                  <div style={{ fontSize: "36px", marginBottom: "8px" }}>{display.emoji}</div>
-                  <div style={{ fontSize: "20px", fontWeight: "bold", color: display.color }}>
+                  <div style={{ fontSize: isLifetimeStreak ? "48px" : "36px", marginBottom: "8px" }}>
+                    {display.emoji}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: isLifetimeStreak ? "24px" : "20px",
+                      fontWeight: "bold",
+                      color: display.color,
+                    }}
+                  >
                     {display.title}
                   </div>
                   {display.subtitle && (
-                    <div style={{ fontSize: "14px", color: "var(--color-text-secondary)", marginTop: "4px" }}>
+                    <div
+                      style={{
+                        fontSize: isLifetimeStreak ? "16px" : "14px",
+                        color: "var(--color-text-secondary)",
+                        marginTop: "4px",
+                      }}
+                    >
                       {display.subtitle}
                     </div>
                   )}
@@ -126,6 +165,27 @@ export default function BadgeCelebration({ badges, onClose }) {
               );
             })}
           </div>
+
+          {/* Lifetime streak requires explicit dismiss */}
+          {isLifetimeStreak && (
+            <button
+              onClick={onClose}
+              style={{
+                marginTop: "28px",
+                padding: "14px 40px",
+                fontSize: "18px",
+                fontWeight: "700",
+                backgroundColor: "#f59e0b",
+                color: "white",
+                border: "none",
+                borderRadius: "12px",
+                cursor: "pointer",
+                animation: "fadeIn 0.4s ease-in 0.5s backwards",
+              }}
+            >
+              Awesome! 💪
+            </button>
+          )}
         </div>
       </div>
 
