@@ -35,7 +35,7 @@ import "./styles.css";
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("available");
   const [challenges, setChallenges] = useState([]);
   const [userChallenges, setUserChallenges] = useState([]);
@@ -45,6 +45,8 @@ export default function App() {
   const [banner, setBanner] = useState(null);
   const [profileName, setProfileName] = useState("");
   const [challengeBadges, setChallengeBadges] = useState({});
+  // targetLeaderboardChallengeId: when set, Leaderboard auto-jumps to that archived challenge
+  const [targetLeaderboardChallengeId, setTargetLeaderboardChallengeId] = useState(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -106,6 +108,15 @@ export default function App() {
 
     loadBadges();
   }, [user, userChallenges, activeTab]);
+
+  // Clear the leaderboard deep-link target whenever user manually switches tabs
+  // (but NOT when we programmatically navigate to leaderboards)
+  const handleTabChange = (tab) => {
+    if (tab !== "leaderboards") {
+      setTargetLeaderboardChallengeId(null);
+    }
+    setActiveTab(tab);
+  };
 
   // ─────────────────────────────────────────────────────────────────────────────
   // AUTO-ARCHIVE: Runs on every app load for any logged-in user.
@@ -183,11 +194,8 @@ export default function App() {
 
   // Builds and writes the leaderboardHistory document for a challenge.
   // Also finalizes all streak/time/legacy badges for every participant.
-  // Mirrors the logic in AdminPanel.js archiveLeaderboardBeforeDeactivate
-  // so both manual and automatic archives produce identical records.
   const runChallengeArchive = async (challenge) => {
     // Finalize streak, time, and legacy attribution badges for all participants.
-    // Must run before the leaderboard snapshot so badge data is fresh.
     await finalizeAllStreaksOnChallengeEnd(challenge.id);
 
     // Get all challengeUserStats for this challenge
@@ -435,13 +443,10 @@ export default function App() {
         newMissedWritten = true;
       }
 
-      // Break the Lifetime Achievements consecutive run once per sync
-      // when at least one NEW missed day was written (not already recorded)
       if (newMissedWritten) {
         try {
           await breakConsecutiveRun(userChallengeData.userId);
         } catch (err) {
-          // Non-fatal — don't block the rest of the sync
           console.error("breakConsecutiveRun error during sync:", err);
         }
       }
@@ -542,6 +547,7 @@ export default function App() {
       setShowRedoMessage(false);
       setBanner(null);
       setChallengeBadges({});
+      setTargetLeaderboardChallengeId(null);
     } catch (error) {
       console.error("Error signing out:", error);
     }
@@ -707,6 +713,12 @@ export default function App() {
 
   const handleRedoUsed = () => {
     setAttemptNumber((prev) => prev + 1);
+  };
+
+  // Navigate to leaderboard and deep-link to a specific archived challenge
+  const handleViewFinalLeaderboard = (challengeId) => {
+    setTargetLeaderboardChallengeId(challengeId);
+    setActiveTab("leaderboards");
   };
 
   if (activeChallengeData) {
@@ -1152,6 +1164,7 @@ export default function App() {
                       key={userChallenge.userChallengeId}
                       userChallenge={userChallenge}
                       isAwaitingGlobalEnd={true}
+                      onViewLeaderboard={handleViewFinalLeaderboard}
                     />
                   ))}
                 </div>
@@ -1161,7 +1174,11 @@ export default function App() {
         )}
 
         {activeTab === "leaderboards" && (
-          <Leaderboard user={user} challenges={challenges} />
+          <Leaderboard
+            user={user}
+            challenges={challenges}
+            targetChallengeId={targetLeaderboardChallengeId}
+          />
         )}
 
         {activeTab === "profile" && (
@@ -1175,7 +1192,7 @@ export default function App() {
 
       <TabNavigation
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         user={user}
       />
     </div>
