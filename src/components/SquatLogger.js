@@ -136,12 +136,16 @@ export default function SquatLogger({
     }
   };
 
+  // Check if any of the new badges is a lifetime streak (legacyRun)
+  const hasLifetimeStreakBadge = newBadges.some((b) => b.type === "legacyRun");
+
   return (
     <>
       {/* Badge Celebration Modal */}
       {showBadgeCelebration && (
         <BadgeCelebration
           badges={newBadges}
+          isLifetimeStreak={hasLifetimeStreakBadge}
           onClose={() => {
             setShowBadgeCelebration(false);
             setIsLogging(false);
