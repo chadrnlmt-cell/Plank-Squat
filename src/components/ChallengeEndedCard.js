@@ -4,11 +4,17 @@ import { db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { calculateChallengeRankings } from "../rankingCalculator";
 
-export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd = false }) {
+export default function ChallengeEndedCard({
+  userChallenge,
+  isAwaitingGlobalEnd = false,
+  onViewLeaderboard = null,
+}) {
   const [isCalculatingRank, setIsCalculatingRank] = useState(false);
   const [rankError, setRankError] = useState(null);
   const [localRank, setLocalRank] = useState(userChallenge.finalRank ?? null);
-  const [localTotalParticipants, setLocalTotalParticipants] = useState(userChallenge.totalParticipants ?? null);
+  const [localTotalParticipants, setLocalTotalParticipants] = useState(
+    userChallenge.totalParticipants ?? null
+  );
 
   const challengeDetails = userChallenge.challengeDetails;
   const isPlank = challengeDetails.type === "plank";
@@ -17,7 +23,6 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
   const numberOfDays = challengeDetails.numberOfDays;
   const lastCompletedDay = userChallenge.lastCompletedDay || 0; // eslint-disable-line no-unused-vars
 
-  // Format seconds as "Xm Ys" or "Xs"
   const formatSeconds = (sec) => {
     const s = Number(sec) || 0;
     const mins = Math.floor(s / 60);
@@ -26,38 +31,24 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
     return `${mins}m ${rem}s`;
   };
 
-  // Calculate rankings if not yet calculated (only if challenge has globally ended)
   useEffect(() => {
     const calculateRankIfNeeded = async () => {
-      // Don't calculate if awaiting global end
-      if (isAwaitingGlobalEnd) {
-        return;
-      }
-
-      // Check if ranking already calculated
-      if (localRank != null && localTotalParticipants != null) {
-        return;
-      }
-
-      // Check if we have the stats data needed
-      // Use == null (not falsy) so bestPerformance of 0 doesn't block ranking
-      if (userChallenge.bestPerformance == null || totalDaysAttempted === 0) {
-        return;
-      }
+      if (isAwaitingGlobalEnd) return;
+      if (localRank != null && localTotalParticipants != null) return;
+      if (userChallenge.bestPerformance == null || totalDaysAttempted === 0) return;
 
       setIsCalculatingRank(true);
       setRankError(null);
 
       try {
-        // Write rankings for all participants to Firestore
         await calculateChallengeRankings(
           userChallenge.challengeId,
           challengeDetails.type
         );
 
-        // Re-fetch this user's doc to get the freshly written finalRank
-        // (the prop is stale — it was loaded before rankings were calculated)
-        const freshDoc = await getDoc(doc(db, "userChallenges", userChallenge.userChallengeId));
+        const freshDoc = await getDoc(
+          doc(db, "userChallenges", userChallenge.userChallengeId)
+        );
         const freshData = freshDoc.exists() ? freshDoc.data() : null;
 
         setLocalRank(freshData?.finalRank ?? null);
@@ -73,7 +64,6 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
     calculateRankIfNeeded();
   }, [userChallenge, challengeDetails, localRank, localTotalParticipants, totalDaysAttempted, isAwaitingGlobalEnd]);
 
-  // If no attempts recorded
   if (totalDaysAttempted === 0) {
     return (
       <div
@@ -91,14 +81,11 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
         <p style={{ margin: "5px 0", fontWeight: "bold" }}>
           {challengeDetails.name}
         </p>
-        <p style={{ margin: "10px 0", color: "#78350f" }}>
-          No attempts recorded
-        </p>
+        <p style={{ margin: "10px 0", color: "#78350f" }}>No attempts recorded</p>
       </div>
     );
   }
 
-  // Get stats from userChallenge (should be populated)
   const bestPerformance = userChallenge.bestPerformance || 0;
   const averagePerformance = userChallenge.averagePerformance || 0;
 
@@ -115,11 +102,20 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
       <h3 style={{ margin: "0 0 10px 0", color: "#92400e" }}>
         {isAwaitingGlobalEnd ? "🏁 Challenge Complete" : "Challenge Ended"}
       </h3>
+
       {isAwaitingGlobalEnd && (
-        <p style={{ margin: "0 0 10px 0", color: "#92400e", fontSize: "14px", fontStyle: "italic" }}>
+        <p
+          style={{
+            margin: "0 0 10px 0",
+            color: "#92400e",
+            fontSize: "14px",
+            fontStyle: "italic",
+          }}
+        >
           Final results at midnight MST
         </p>
       )}
+
       <p style={{ margin: "5px 0", fontWeight: "bold", fontSize: "16px" }}>
         {challengeDetails.name}
       </p>
@@ -131,7 +127,9 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
         <ul style={{ margin: "0", paddingLeft: "20px", color: "#78350f" }}>
           <li style={{ marginBottom: "5px" }}>
             <strong>Best:</strong>{" "}
-            {isPlank ? formatSeconds(bestPerformance) : `${bestPerformance} reps`}
+            {isPlank
+              ? formatSeconds(bestPerformance)
+              : `${bestPerformance} reps`}
           </li>
           <li style={{ marginBottom: "5px" }}>
             <strong>Challenge avg:</strong>{" "}
@@ -142,7 +140,8 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
               : "—"}
           </li>
           <li style={{ marginBottom: "5px" }}>
-            <strong>Days Completed:</strong> {successfulDaysCount} of {numberOfDays}
+            <strong>Days Completed:</strong> {successfulDaysCount} of{" "}
+            {numberOfDays}
           </li>
           {isAwaitingGlobalEnd ? (
             <li style={{ marginBottom: "5px", fontStyle: "italic" }}>
@@ -158,11 +157,34 @@ export default function ChallengeEndedCard({ userChallenge, isAwaitingGlobalEnd 
             </li>
           ) : localRank != null && localTotalParticipants != null ? (
             <li style={{ marginBottom: "5px" }}>
-              <strong>Ranked:</strong> #{localRank} of {localTotalParticipants} participants
+              <strong>Ranked:</strong> #{localRank} of {localTotalParticipants}{" "}
+              participants
             </li>
           ) : null}
         </ul>
       </div>
+
+      {/* View Final Leaderboard button — shown on both awaiting and ended cards
+          when the parent has wired up the onViewLeaderboard handler */}
+      {onViewLeaderboard && (
+        <button
+          onClick={() => onViewLeaderboard(userChallenge.challengeId)}
+          style={{
+            marginTop: "16px",
+            width: "100%",
+            padding: "10px 16px",
+            fontSize: "14px",
+            fontWeight: "600",
+            backgroundColor: "#f59e0b",
+            color: "white",
+            border: "none",
+            borderRadius: "6px",
+            cursor: "pointer",
+          }}
+        >
+          📊 View Final Leaderboard
+        </button>
+      )}
     </div>
   );
 }
