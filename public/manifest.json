@@ -1,0 +1,24 @@
+{
+  "short_name": "Plank & Squat",
+  "name": "Plank & Squat Challenge",
+  "description": "Track your daily plank and squat challenges",
+  "icons": [
+    {
+      "src": "icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0f3460",
+  "background_color": "#0f3460",
+  "orientation": "portrait"
+}
