@@ -24,6 +24,7 @@ import Profile from "./components/Profile";
 import Banner from "./components/Banner";
 import BadgeDisplay from "./components/BadgeDisplay";
 import ChallengeGuide from "./components/ChallengeGuide";
+import InstallPrompt from "./components/InstallPrompt";
 import { getChallengeBadges, breakConsecutiveRun, finalizeAllStreaksOnChallengeEnd } from "./badgeHelpers";
 import {
   getPhoenixDate,
@@ -880,6 +881,7 @@ export default function App() {
 
   return (
     <div style={{ paddingBottom: "80px" }}>
+      <InstallPrompt />
       {banner && (
         <Banner
           message={banner.message}
