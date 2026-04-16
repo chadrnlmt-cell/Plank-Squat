@@ -17,6 +17,7 @@ import PlankTimer from "./components/PlankTimer";
 import SquatLogger from "./components/SquatLogger";
 import ChallengeCard from "./components/ChallengeCard";
 import ChallengeEndedCard from "./components/ChallengeEndedCard";
+import ChallengeReminder from "./components/ChallengeReminder";
 import TabNavigation from "./components/TabNavigation";
 import AdminPanel from "./components/AdminPanel";
 import Leaderboard from "./components/Leaderboard";
@@ -194,7 +195,7 @@ export default function App() {
   };
 
   // Builds and writes the leaderboardHistory document for a challenge.
-  // Also finalizes all streak/time/legacy badges for every participant.
+  // Also finalizes all streak/time/legacy attribution badges for every participant.
   const runChallengeArchive = async (challenge) => {
     // Finalize streak, time, and legacy attribution badges for all participants.
     await finalizeAllStreaksOnChallengeEnd(challenge.id);
@@ -1157,6 +1158,14 @@ export default function App() {
                               : "\u2713 Today's challenge crushed! Next up tomorrow at midnight MST"}
                           </div>
                         )}
+
+                        {/* Reminder section — collapsed by default, per-challenge */}
+                        <ChallengeReminder
+                          userId={user.uid}
+                          challengeId={userChallenge.challengeId}
+                          challengeName={userChallenge.challengeDetails.name}
+                        />
+
                       </div>
                     );
                   })}

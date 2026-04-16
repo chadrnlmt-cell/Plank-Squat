@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getMessaging, isSupported } from "firebase/messaging";
 import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 
 const firebaseConfig = {
@@ -28,4 +29,16 @@ const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 const db = getFirestore(app);
 
-export { auth, provider, db, appCheck };
+// Initialize FCM — only available in browsers that support service workers
+// isSupported() returns a promise, so we initialize lazily and export the instance
+let messaging = null;
+try {
+  // Synchronous check: service workers are the minimum requirement
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    messaging = getMessaging(app);
+  }
+} catch (err) {
+  console.warn('Firebase Messaging not supported in this environment:', err.message);
+}
+
+export { auth, provider, db, appCheck, messaging };
