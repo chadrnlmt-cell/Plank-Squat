@@ -17,6 +17,7 @@ import {
 import { getPhoenixDate } from "../utils";
 import TeamManagement from "./TeamManagement";
 import CompletedChallenges from "./CompletedChallenges";
+import AdminPracticeReport from "./AdminPracticeReport";
 import {
   finalizeAllStreaksOnChallengeEnd,
   clearChallengeBadgesOnReset,
@@ -599,8 +600,8 @@ export default function AdminPanel({ user }) {
     <div style={{ padding: "20px", paddingBottom: "100px", backgroundColor: "#f5f5f5" }}>
       <h1>Admin Panel</h1>
 
-      <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "2px solid #ddd" }}>
-        {["challenges", "teams", "completed"].map((tab) => (
+      <div style={{ display: "flex", gap: "10px", marginBottom: "20px", borderBottom: "2px solid #ddd", flexWrap: "wrap" }}>
+        {["challenges", "teams", "completed", "practice"].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveAdminTab(tab)}
@@ -615,7 +616,13 @@ export default function AdminPanel({ user }) {
               fontWeight: activeAdminTab === tab ? "bold" : "normal",
             }}
           >
-            {tab === "challenges" ? "Challenges" : tab === "teams" ? "Teams" : "Completed Challenges"}
+            {tab === "challenges"
+              ? "Challenges"
+              : tab === "teams"
+              ? "Teams"
+              : tab === "completed"
+              ? "Completed Challenges"
+              : "Practice"}
           </button>
         ))}
       </div>
@@ -624,6 +631,8 @@ export default function AdminPanel({ user }) {
         <TeamManagement user={user} />
       ) : activeAdminTab === "completed" ? (
         <CompletedChallenges user={user} />
+      ) : activeAdminTab === "practice" ? (
+        <AdminPracticeReport />
       ) : (
         <>
           <button

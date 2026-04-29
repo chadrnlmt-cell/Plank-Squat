@@ -13,6 +13,7 @@ import {
 import { getPhoenixDate } from "../utils";
 import { updatePlankStatsOnSuccess } from "../statsHelpers";
 import { updateBadgesOnCompletion } from "../badgeHelpers";
+import { logPracticeSession } from "../practiceHelpers";
 import BadgeCelebration from "./BadgeCelebration";
 
 // Simple helper to request/release screen wake lock
@@ -111,6 +112,7 @@ export default function PlankTimer({
   onComplete,
   onCancel,
   onRedoUsed,
+  isPractice = false,
 }) {
   const [stage, setStage] = useState("countdown");
   // Stages: countdown | active | paused | autoStopping | stillGoingPrompt | keepRedoScreen | complete | failed
@@ -497,6 +499,32 @@ export default function PlankTimer({
     isSubmittingRef.current = true;
     setIsSubmitting(true);
 
+    // ── Practice Session path: isolated from regular challenge persistence ──
+    if (isPractice) {
+      try {
+        const result = await logPracticeSession({
+          userId,
+          displayName: displayName || null,
+          actualSeconds: actualValue,
+          success,
+        });
+        if (result.newBadges && result.newBadges.length > 0) {
+          setNewBadges(result.newBadges);
+          setShowBadgeCelebration(true);
+        }
+        setStage("complete");
+        setTimeout(() => {
+          onComplete(false);
+        }, 5000);
+      } catch (err) {
+        console.error("Error logging practice session:", err);
+        alert("Failed to log practice session: " + (err?.message || "unknown error"));
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
     try {
       const userChallengeRef = doc(db, "userChallenges", userChallengeId);
       const userChallengeSnap = await getDoc(userChallengeRef);
@@ -582,6 +610,24 @@ export default function PlankTimer({
   };
 
   const handleFailedAttempt = async () => {
+    // ── Practice Session: log a failed attempt without touching userChallenges ──
+    if (isPractice) {
+      try {
+        await logPracticeSession({
+          userId,
+          displayName: displayName || null,
+          actualSeconds: elapsed || frozenTime || 0,
+          success: false,
+        });
+      } catch (err) {
+        console.error("Error logging failed practice attempt:", err);
+      }
+      setTimeout(() => {
+        onComplete(false);
+      }, 3000);
+      return;
+    }
+
     try {
       const userChallengeRef = doc(db, "userChallenges", userChallengeId);
       const userChallengeSnap = await getDoc(userChallengeRef);

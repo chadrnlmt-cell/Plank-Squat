@@ -1,17 +1,6 @@
 // src/components/PracticeCard.js
 import React, { useState, useEffect } from "react";
-import { db } from "../firebase";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  updateDoc,
-  doc,
-} from "firebase/firestore";
-import { getChallengeBadges } from "../badgeHelpers";
-
-const PRACTICE_TARGET = 60;
+import { getPracticeStats, leavePractice } from "../practiceHelpers";
 
 function formatSeconds(sec) {
   const s = Number(sec) || 0;
@@ -22,42 +11,28 @@ function formatSeconds(sec) {
 }
 
 export default function PracticeCard({
-  userChallengeId,
-  challengeId,
   userId,
-  user,
-  displayName,
   onStartPractice,
   onLeft,
 }) {
-  const [sessions, setSessions] = useState([]);
-  const [badges, setBadges] = useState(null);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
-    if (!userId || !challengeId) return;
+    if (!userId) return;
     loadData();
-  }, [userId, challengeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const attQ = query(
-        collection(db, "attempts"),
-        where("userId", "==", userId),
-        where("challengeId", "==", challengeId),
-        where("success", "==", true)
-      );
-      const attSnap = await getDocs(attQ);
-      const sessionList = attSnap.docs.map((d) => d.data());
-      setSessions(sessionList);
-
-      const badgeData = await getChallengeBadges(userId, challengeId);
-      setBadges(badgeData);
+      const data = await getPracticeStats(userId);
+      setStats(data || {});
     } catch (err) {
       console.error("PracticeCard loadData error:", err);
+      setStats({});
     } finally {
       setLoading(false);
     }
@@ -66,35 +41,28 @@ export default function PracticeCard({
   const handleLeave = async () => {
     setLeaving(true);
     try {
-      await updateDoc(doc(db, "userChallenges", userChallengeId), {
-        status: "left",
-      });
+      await leavePractice(userId);
       setShowLeaveConfirm(false);
       if (onLeft) onLeft();
     } catch (err) {
       console.error("PracticeCard leave error:", err);
-      alert("Could not leave Practice Day. Please try again.");
+      alert("Could not leave Practice Session. Please try again.");
     } finally {
       setLeaving(false);
     }
   };
 
-  // Compute stats
-  const totalSessions = sessions.length;
-  const totalSeconds = sessions.reduce((sum, s) => sum + (s.actualValue || 0), 0);
-  const bestSeconds = sessions.reduce((best, s) => Math.max(best, s.actualValue || 0), 0);
+  const totalSessions = stats?.totalSessions || 0;
+  const totalSeconds = stats?.totalSeconds || 0;
+  const bestSeconds = stats?.bestSeconds || 0;
+  const currentStreak = stats?.currentStreak || 0;
 
-  // Calendar streak from badge data
-  const currentStreak = badges?.currentStreak || 0;
+  const completedStreaks = stats?.completedStreakBadges || {};
+  const currentStreakBadgeLevel = stats?.currentStreakBadgeLevel || 0;
 
-  // Multiplier badges
-  const doubles = badges?.doubleBadgeCount || 0;
-  const triples = badges?.tripleBadgeCount || 0;
-  const quads = badges?.quadrupleBadgeCount || 0;
-
-  // Streak badges earned
-  const completedStreaks = badges?.completedStreakBadges || {};
-  const currentStreakBadgeLevel = badges?.currentStreakBadgeLevel || 0;
+  const doubles = stats?.doubleBadgeCount || 0;
+  const triples = stats?.tripleBadgeCount || 0;
+  const quads = stats?.quadrupleBadgeCount || 0;
 
   const streakPillConfig = [
     { days: 3,  label: "3-Day",  fontSize: 12 },
@@ -121,7 +89,6 @@ export default function PracticeCard({
 
   return (
     <>
-      {/* Leave Confirmation Modal */}
       {showLeaveConfirm && (
         <div
           style={{
@@ -141,7 +108,7 @@ export default function PracticeCard({
             }}
           >
             <div style={{ fontSize: "40px", marginBottom: "12px" }}>🏋️</div>
-            <h3 style={{ margin: "0 0 10px 0", color: "var(--color-text)" }}>Leave Practice Day?</h3>
+            <h3 style={{ margin: "0 0 10px 0", color: "var(--color-text)" }}>Leave Practice Session?</h3>
             <p style={{ fontSize: "14px", color: "var(--color-text-secondary)", margin: "0 0 20px 0", lineHeight: 1.5 }}>
               You can always come back — your badges, streaks, and session history are saved and will be here when you return.
             </p>
@@ -173,7 +140,6 @@ export default function PracticeCard({
         </div>
       )}
 
-      {/* Practice Card */}
       <div
         className="card"
         style={{
@@ -183,11 +149,10 @@ export default function PracticeCard({
         }}
       >
         <div className="card__body">
-          {/* Header */}
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "12px" }}>
             <div>
               <h3 style={{ margin: 0, fontSize: "18px", color: "#065f46", display: "flex", alignItems: "center", gap: "8px" }}>
-                🏋️ Practice Day
+                🏋️ Practice Session
               </h3>
               <p style={{ margin: "3px 0 0 0", fontSize: "12px", color: "#047857" }}>
                 Always available · 60s plank · No end date
@@ -208,7 +173,6 @@ export default function PracticeCard({
             )}
           </div>
 
-          {/* Stats Row */}
           {loading ? (
             <p style={{ fontSize: "13px", color: "#6b7280" }}>Loading...</p>
           ) : (
@@ -238,7 +202,6 @@ export default function PracticeCard({
                 </div>
               )}
 
-              {/* Badges */}
               {hasBadges && (
                 <div style={{ marginBottom: "14px" }}>
                   <div style={{ fontSize: "11px", fontWeight: "700", color: "#065f46", marginBottom: "6px" }}>BADGES</div>
@@ -281,7 +244,6 @@ export default function PracticeCard({
             </>
           )}
 
-          {/* Start Button */}
           <button
             className="btn btn--primary"
             onClick={onStartPractice}
@@ -294,7 +256,6 @@ export default function PracticeCard({
             🏋️ Start Practice Session
           </button>
 
-          {/* Leave link */}
           <div style={{ textAlign: "center", marginTop: "10px" }}>
             <button
               onClick={() => setShowLeaveConfirm(true)}
@@ -304,7 +265,7 @@ export default function PracticeCard({
                 cursor: "pointer", textDecoration: "underline",
               }}
             >
-              Leave Practice Day
+              Leave Practice Session
             </button>
           </div>
         </div>

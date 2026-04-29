@@ -12,6 +12,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { getAllUserBadges } from "../badgeHelpers";
+import { getPracticeStats } from "../practiceHelpers";
 import { LegacyBadgeDisplay } from "./BadgeDisplay";
 import ChallengeEndedCard from "./ChallengeEndedCard";
 
@@ -35,6 +36,9 @@ export default function Profile({ user, completedChallenges = [] }) {
 
   const [badgesLoading, setBadgesLoading] = useState(true);
   const [allBadges, setAllBadges] = useState(null);
+
+  const [practiceStats, setPracticeStats] = useState(null);
+  const [practiceLoading, setPracticeLoading] = useState(true);
 
   const formatSeconds = (sec) => {
     const s = Number(sec) || 0;
@@ -115,6 +119,22 @@ export default function Profile({ user, completedChallenges = [] }) {
       }
     };
     loadBadges();
+  }, [user]);
+
+  useEffect(() => {
+    const loadPractice = async () => {
+      if (!user) return;
+      setPracticeLoading(true);
+      try {
+        const stats = await getPracticeStats(user.uid);
+        setPracticeStats(stats);
+      } catch (err) {
+        console.error("Error loading practice stats:", err);
+      } finally {
+        setPracticeLoading(false);
+      }
+    };
+    loadPractice();
   }, [user]);
 
   const handleSaveName = async () => {
@@ -401,6 +421,55 @@ export default function Profile({ user, completedChallenges = [] }) {
           )}
         </div>
       </div>
+
+      {/* Practice Session History — visible whenever there's practice data, even after Leave */}
+      {!practiceLoading && practiceStats && (practiceStats.totalSessions || 0) > 0 && (
+        <div
+          className="card"
+          style={{
+            textAlign: "left",
+            maxWidth: "500px",
+            margin: "0 auto",
+            border: "2px solid #10b981",
+            background: "linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)",
+          }}
+        >
+          <div className="card__body">
+            <h2 style={{ marginTop: 0, marginBottom: "4px", color: "#065f46" }}>
+              🏋️ Practice Session History
+            </h2>
+            <p style={{ fontSize: "13px", color: "#047857", marginTop: 0, marginBottom: "16px" }}>
+              {practiceStats.joined ? "You're currently in Practice Session." : "You've left Practice Session — your history is saved."}
+            </p>
+            <div style={{ display: "flex", gap: "12px", marginBottom: "12px" }}>
+              <div style={{ flex: 1, textAlign: "center", padding: "10px", background: "rgba(16,185,129,0.10)", borderRadius: "8px" }}>
+                <div style={{ fontSize: "20px", fontWeight: "bold", color: "#065f46" }}>{practiceStats.totalSessions || 0}</div>
+                <div style={{ fontSize: "11px", color: "#047857" }}>Sessions</div>
+              </div>
+              <div style={{ flex: 1, textAlign: "center", padding: "10px", background: "rgba(16,185,129,0.10)", borderRadius: "8px" }}>
+                <div style={{ fontSize: "20px", fontWeight: "bold", color: "#065f46" }}>{formatSeconds(practiceStats.totalSeconds || 0)}</div>
+                <div style={{ fontSize: "11px", color: "#047857" }}>Total Time</div>
+              </div>
+              <div style={{ flex: 1, textAlign: "center", padding: "10px", background: "rgba(16,185,129,0.10)", borderRadius: "8px" }}>
+                <div style={{ fontSize: "20px", fontWeight: "bold", color: "#065f46" }}>{formatSeconds(practiceStats.bestSeconds || 0)}</div>
+                <div style={{ fontSize: "11px", color: "#047857" }}>Best</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "12px" }}>
+              <div style={{ flex: 1, textAlign: "center", padding: "10px", background: "#fef3c7", borderRadius: "8px", border: "1px solid #fbbf24" }}>
+                <div style={{ fontSize: "18px", fontWeight: "bold", color: "#78350f" }}>
+                  🔥 {practiceStats.currentStreak || 0}
+                </div>
+                <div style={{ fontSize: "11px", color: "#92400e" }}>Current Streak</div>
+              </div>
+              <div style={{ flex: 1, textAlign: "center", padding: "10px", background: "#fef3c7", borderRadius: "8px", border: "1px solid #fbbf24" }}>
+                <div style={{ fontSize: "18px", fontWeight: "bold", color: "#78350f" }}>{practiceStats.bestStreak || 0}</div>
+                <div style={{ fontSize: "11px", color: "#92400e" }}>Best Streak</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Completed Challenges Section */}
       {completedChallenges.length > 0 && (

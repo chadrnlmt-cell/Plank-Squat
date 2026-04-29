@@ -33,6 +33,14 @@ import {
   formatDateShort,
   isChallengeEnded,
 } from "./utils";
+import {
+  PRACTICE_CHALLENGE_ID,
+  PRACTICE_DETAILS,
+  PRACTICE_TARGET_SECONDS,
+  isPracticeChallengeId,
+} from "./practiceConstants";
+import { isJoinedPractice, joinPractice } from "./practiceHelpers";
+import PracticeCard from "./components/PracticeCard";
 import "./styles.css";
 
 export default function App() {
@@ -49,6 +57,9 @@ export default function App() {
   const [challengeBadges, setChallengeBadges] = useState({});
   // targetLeaderboardChallengeId: when set, Leaderboard auto-jumps to that archived challenge
   const [targetLeaderboardChallengeId, setTargetLeaderboardChallengeId] = useState(null);
+  // Practice Session join state (built-in, not stored in userChallenges)
+  const [practiceJoined, setPracticeJoined] = useState(false);
+  const [practiceReloadKey, setPracticeReloadKey] = useState(0);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -91,6 +102,24 @@ export default function App() {
       });
     }
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Practice Session join state — built-in, lives in practiceUserStats/{uid}
+  useEffect(() => {
+    const loadPracticeJoin = async () => {
+      if (!user) {
+        setPracticeJoined(false);
+        return;
+      }
+      try {
+        const joined = await isJoinedPractice(user.uid);
+        setPracticeJoined(joined);
+      } catch (err) {
+        console.error("Error loading practice join state:", err);
+        setPracticeJoined(false);
+      }
+    };
+    loadPracticeJoin();
+  }, [user, practiceReloadKey]);
 
   useEffect(() => {
     const loadBadges = async () => {
@@ -138,6 +167,9 @@ export default function App() {
 
       for (const docSnap of snapshot.docs) {
         const challenge = { id: docSnap.id, ...docSnap.data() };
+
+        // Practice is built-in and never archives; skip defensively.
+        if (isPracticeChallengeId(challenge.id)) continue;
 
         // Skip if not fully configured
         if (!challenge.startDate || !challenge.numberOfDays) continue;
@@ -331,6 +363,8 @@ export default function App() {
       }));
 
       const filtered = all.filter((ch) => {
+        // Practice is built-in; never let an admin-created practice doc leak in.
+        if (isPracticeChallengeId(ch.id)) return false;
         if (!ch.startDate || !ch.numberOfDays) return false;
         return !isChallengeEnded(ch.startDate, ch.numberOfDays);
       });
@@ -503,6 +537,9 @@ export default function App() {
       for (const docSnap of snapshot.docs) {
         const userChallengeData = docSnap.data();
 
+        // Skip any stray userChallenges rows pointed at the built-in practice id.
+        if (isPracticeChallengeId(userChallengeData.challengeId)) continue;
+
         const challengeQuery = await getDocs(
           query(
             collection(db, "challenges"),
@@ -550,13 +587,53 @@ export default function App() {
       setBanner(null);
       setChallengeBadges({});
       setTargetLeaderboardChallengeId(null);
+      setPracticeJoined(false);
     } catch (error) {
       console.error("Error signing out:", error);
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Practice Session — built-in, no admin doc, isolated collections.
+  // ─────────────────────────────────────────────────────────────────────────
+  const handleJoinPractice = async () => {
+    if (!user) return;
+    try {
+      await joinPractice(user.uid, profileName || user.displayName || null);
+      setPracticeJoined(true);
+      setPracticeReloadKey((k) => k + 1);
+      setActiveTab("active");
+    } catch (err) {
+      console.error("Error joining practice:", err);
+      setBanner({ message: "Could not join Practice Session. Please try again.", type: "warning" });
+    }
+  };
+
+  const handleStartPractice = () => {
+    setActiveChallengeData({
+      isPractice: true,
+      challengeId: PRACTICE_CHALLENGE_ID,
+      challengeDetails: PRACTICE_DETAILS,
+      currentDay: 1,
+      userChallengeId: null,
+    });
+    setShowRedoMessage(false);
+  };
+
+  const handlePracticeLeft = () => {
+    setPracticeJoined(false);
+    setPracticeReloadKey((k) => k + 1);
+    setActiveTab("available");
+  };
+
   const handleJoinChallenge = async (challenge, teamId = null) => {
     try {
+      // Practice is built-in and uses a different join flow.
+      if (isPracticeChallengeId(challenge?.id)) {
+        await handleJoinPractice();
+        return;
+      }
+
       const alreadyJoined = userChallenges.some(
         (uc) => uc.challengeId === challenge.id
       );
@@ -730,7 +807,32 @@ export default function App() {
       userChallengeId,
       challengeId,
       teamId,
+      isPractice: isPracticeFlow,
     } = activeChallengeData;
+
+    if (isPracticeFlow) {
+      return (
+        <PlankTimer
+          isPractice
+          targetSeconds={PRACTICE_TARGET_SECONDS}
+          day={1}
+          userChallengeId={null}
+          challengeId={PRACTICE_CHALLENGE_ID}
+          userId={user.uid}
+          user={user}
+          displayName={profileName || user.displayName || ""}
+          teamId={null}
+          numberOfDays={1}
+          attemptNumber={1}
+          onComplete={() => {
+            setActiveChallengeData(null);
+            setPracticeReloadKey((k) => k + 1);
+          }}
+          onCancel={() => setActiveChallengeData(null)}
+          onRedoUsed={() => {}}
+        />
+      );
+    }
 
     if (challengeDetails.type === "plank") {
       const targetSeconds =
@@ -929,19 +1031,58 @@ export default function App() {
         {activeTab === "available" && (
           <div>
             <h2>Available Challenges</h2>
-            {challenges.length === 0 ? (
-              <p style={{ color: "#999" }}>
-                New challenges coming soon - check back later!
-              </p>
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "15px",
-                }}
-              >
-                {challenges.map((challenge) => {
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "15px",
+              }}
+            >
+              {/* Built-in Practice Session — shown when the user isn't currently joined */}
+              {!practiceJoined && (
+                <div
+                  style={{
+                    border: "2px solid #10b981",
+                    background: "linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)",
+                    borderRadius: "8px",
+                    padding: "20px",
+                    boxShadow: "0 2px 8px rgba(16,185,129,0.15)",
+                  }}
+                >
+                  <h3 style={{ margin: "0 0 6px 0", color: "#065f46", fontSize: "18px" }}>
+                    🏋️ Practice Session
+                  </h3>
+                  <p style={{ margin: "0 0 6px 0", fontSize: "13px", color: "#047857" }}>
+                    Always available · 60s plank · No end date
+                  </p>
+                  <p style={{ margin: "0 0 14px 0", fontSize: "13px", color: "#065f46" }}>
+                    {PRACTICE_DETAILS.description}
+                  </p>
+                  <button
+                    onClick={handleJoinPractice}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      fontSize: "16px",
+                      fontWeight: "bold",
+                      backgroundColor: "#10b981",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Join Practice Session
+                  </button>
+                </div>
+              )}
+
+              {challenges.length === 0 ? (
+                <p style={{ color: "#999" }}>
+                  New challenges coming soon - check back later!
+                </p>
+              ) : (
+                challenges.map((challenge) => {
                   const alreadyJoined = userChallenges.some(
                     (uc) => uc.challengeId === challenge.id
                   );
@@ -954,9 +1095,9 @@ export default function App() {
                       alreadyJoined={alreadyJoined}
                     />
                   );
-                })}
-              </div>
-            )}
+                })
+              )}
+            </div>
           </div>
         )}
 
@@ -977,7 +1118,8 @@ export default function App() {
                 getJustCompletedChallenges(userChallenges);
               const hasAnyChallenges =
                 activeChallenges.length > 0 ||
-                justCompletedChallenges.length > 0;
+                justCompletedChallenges.length > 0 ||
+                practiceJoined;
 
               if (!hasAnyChallenges) {
                 return (
@@ -1002,6 +1144,14 @@ export default function App() {
                     gap: "15px",
                   }}
                 >
+                  {practiceJoined && (
+                    <PracticeCard
+                      key={`practice-${practiceReloadKey}`}
+                      userId={user.uid}
+                      onStartPractice={handleStartPractice}
+                      onLeft={handlePracticeLeft}
+                    />
+                  )}
                   {activeChallenges.map((userChallenge) => {
                     const canStart = canStartToday(userChallenge);
                     const restCount = userChallenge.missedDaysCount || 0;
