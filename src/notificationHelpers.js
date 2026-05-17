@@ -6,13 +6,11 @@ import {
   doc,
   setDoc,
   getDoc,
-  deleteDoc,
   Timestamp,
 } from 'firebase/firestore';
 
 const VAPID_KEY = 'BHA23WO3Pq3hunM1-sYJhBYyJBnsazlhZvCFEUc3FoTh7m0RRdJBA-D8Peg0TStSCbSihARi9l7qoaJXbnynMmU';
 
-// Motivational messages — randomly picked for each notification
 const MOTIVATIONAL_MESSAGES = [
   "Time to crush today's challenge! 💪",
   "Small effort today, stronger tomorrow. 🔥",
@@ -28,31 +26,50 @@ export const getRandomMessage = () => {
   return MOTIVATIONAL_MESSAGES[Math.floor(Math.random() * MOTIVATIONAL_MESSAGES.length)];
 };
 
-// Request notification permission and get FCM token
+// FIX: Auto-refresh FCM token on app load if permission already granted.
+// Safari PWA tokens go stale after iOS updates or long background periods.
+// Pass userId and array of challengeIds the user is enrolled in.
+export const refreshFCMTokenIfNeeded = async (userId, challengeIds) => {
+  try {
+    if (!userId || !challengeIds || challengeIds.length === 0) return;
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+
+    const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+    if (!token) return;
+
+    for (const challengeId of challengeIds) {
+      for (const slot of [1, 2]) {
+        const reminderId = `${userId}_${challengeId}_${slot}`;
+        const reminderRef = doc(db, "challengeReminders", reminderId);
+        const snap = await getDoc(reminderRef);
+        if (snap.exists() && snap.data().enabled && snap.data().fcmToken !== token) {
+          await setDoc(reminderRef, { fcmToken: token, updatedAt: Timestamp.now() }, { merge: true });
+          console.log(`🔄 Refreshed FCM token for ${reminderId}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('refreshFCMTokenIfNeeded error:', err);
+  }
+};
+
 export const requestNotificationPermission = async () => {
   try {
-    // Check if browser supports notifications
     if (!('Notification' in window)) {
       return { success: false, error: 'notifications_not_supported' };
     }
-
-    // If already denied, can't re-request
     if (Notification.permission === 'denied') {
       return { success: false, error: 'permission_denied' };
     }
-
-    // Request permission
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
       return { success: false, error: 'permission_denied' };
     }
-
-    // Get FCM token
     const token = await getToken(messaging, { vapidKey: VAPID_KEY });
     if (!token) {
       return { success: false, error: 'no_token' };
     }
-
     return { success: true, token };
   } catch (err) {
     console.error('requestNotificationPermission error:', err);
@@ -60,9 +77,6 @@ export const requestNotificationPermission = async () => {
   }
 };
 
-// FIX: foreground notification handler — shows notification when app is open.
-// Call this once when the app loads (e.g. in App.js useEffect).
-// Without this, notifications sent while app is open are silently ignored.
 export const initForegroundNotifications = () => {
   try {
     onMessage(messaging, (payload) => {
@@ -71,8 +85,8 @@ export const initForegroundNotifications = () => {
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification(title, {
           body,
-          icon: '/icon-192.svg',
-          badge: '/icon-192.svg',
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
         });
       }
     });
@@ -81,8 +95,6 @@ export const initForegroundNotifications = () => {
   }
 };
 
-// Save reminder settings to Firestore
-// reminderId format: userId_challengeId_slot (slot = 1 or 2)
 export const saveReminder = async (userId, challengeId, slot, settings) => {
   try {
     const reminderId = `${userId}_${challengeId}_${slot}`;
@@ -92,11 +104,9 @@ export const saveReminder = async (userId, challengeId, slot, settings) => {
       challengeId,
       slot,
       enabled: settings.enabled,
-      time: settings.time,           // "07:30" 24-hour format
-      timeZone: settings.timeZone,   // e.g. "America/Phoenix"
+      time: settings.time,
+      timeZone: settings.timeZone,
       fcmToken: settings.fcmToken,
-      // FIX: clear lastSentDate when saving/updating a reminder so the new time
-      // fires correctly today if applicable, instead of being blocked by a stale date.
       lastSentDate: null,
       updatedAt: Timestamp.now(),
     }, { merge: true });
@@ -107,7 +117,6 @@ export const saveReminder = async (userId, challengeId, slot, settings) => {
   }
 };
 
-// Load reminder settings from Firestore
 export const loadReminder = async (userId, challengeId, slot) => {
   try {
     const reminderId = `${userId}_${challengeId}_${slot}`;
@@ -123,7 +132,6 @@ export const loadReminder = async (userId, challengeId, slot) => {
   }
 };
 
-// Disable a reminder slot
 export const disableReminder = async (userId, challengeId, slot) => {
   try {
     const reminderId = `${userId}_${challengeId}_${slot}`;
@@ -142,7 +150,6 @@ export const disableReminder = async (userId, challengeId, slot) => {
   }
 };
 
-// Generate 30-minute increment time options for picker (12:00 AM - 11:30 PM)
 export const getTimeOptions = () => {
   const options = [];
   for (let h = 0; h < 24; h++) {
@@ -150,18 +157,15 @@ export const getTimeOptions = () => {
       const hour24 = h.toString().padStart(2, '0');
       const min = m.toString().padStart(2, '0');
       const value = `${hour24}:${min}`;
-
       const period = h < 12 ? 'AM' : 'PM';
       const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
       const label = `${hour12}:${min} ${period}`;
-
       options.push({ value, label });
     }
   }
   return options;
 };
 
-// Detect user's local timezone
 export const getUserTimeZone = () => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone;

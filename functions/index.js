@@ -19,7 +19,6 @@ const MOTIVATIONAL_MESSAGES = [
 const getRandomMessage = () =>
   MOTIVATIONAL_MESSAGES[Math.floor(Math.random() * MOTIVATIONAL_MESSAGES.length)];
 
-// Returns current time in minutes-since-midnight for a given IANA timezone
 const getMinutesSinceMidnight = (timeZone) => {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
@@ -36,18 +35,35 @@ const getMinutesSinceMidnight = (timeZone) => {
   }
 };
 
-// Parse "HH:MM" string to minutes since midnight
 const parseTimeToMinutes = (timeStr) => {
   const [h, m] = timeStr.split(":").map(Number);
   return h * 60 + m;
 };
 
-// Runs every 30 minutes — checks challengeReminders for any that fall within the current window
+// FIX: Get today's date string in the user's own timezone (not UTC).
+// Previously used new Date().toISOString() which is UTC — this caused late-evening
+// reminders (7-8 PM Phoenix) to use tomorrow's UTC date, breaking the lastSentDate check.
+const getTodayInTimeZone = (timeZone) => {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const y = parts.find((p) => p.type === "year").value;
+    const mo = parts.find((p) => p.type === "month").value;
+    const d = parts.find((p) => p.type === "day").value;
+    return `${y}-${mo}-${d}`;
+  } catch {
+    return new Date().toISOString().split("T")[0];
+  }
+};
+
 exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
   const db = getFirestore();
   const messaging = getMessaging();
 
-  // Get all enabled reminders
   const snapshot = await db
     .collection("challengeReminders")
     .where("enabled", "==", true)
@@ -58,7 +74,6 @@ exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
     return;
   }
 
-  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
   const sends = [];
 
   snapshot.forEach((docSnap) => {
@@ -67,16 +82,15 @@ exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
 
     if (!fcmToken || !time || !timeZone) return;
 
-    // Don't send twice in the same day
+    // FIX: Use user's timezone for today's date, not UTC
+    const today = getTodayInTimeZone(timeZone);
+
     if (lastSentDate === today) return;
 
     const currentMinutes = getMinutesSinceMidnight(timeZone);
     if (currentMinutes === null) return;
 
     const reminderMinutes = parseTimeToMinutes(time);
-
-    // FIX: Widened window to 35 minutes to account for Cloud Scheduler drift/cold starts.
-    // Previously 30 min window meant if function ran at :31 for a :00 reminder, it was missed.
     const diff = currentMinutes - reminderMinutes;
     if (diff < 0 || diff >= 35) return;
 
@@ -92,9 +106,8 @@ exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
           },
           webpush: {
             notification: {
-              // FIX: corrected icon path to match actual file in public root
-              icon: "/icon-192.svg",
-              badge: "/icon-192.svg",
+              icon: "/icon-192.png",
+              badge: "/icon-192.png",
               vibrate: [200, 100, 200],
             },
             fcm_options: {
@@ -103,7 +116,6 @@ exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
           },
         })
         .then(async () => {
-          // Mark as sent today so we don't double-send
           await db.collection("challengeReminders").doc(docSnap.id).update({
             lastSentDate: today,
             lastSentAt: Timestamp.now(),
@@ -112,7 +124,6 @@ exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
         })
         .catch((err) => {
           console.error(`❌ Failed to send to ${data.userId}:`, err.message);
-          // If token is invalid, disable the reminder
           if (
             err.code === "messaging/registration-token-not-registered" ||
             err.code === "messaging/invalid-registration-token"

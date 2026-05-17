@@ -15,18 +15,17 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // Handle background messages (app is closed or in background)
+// FIX: icon changed from .svg to .png — Safari PWA does not support SVG notification icons
 messaging.onBackgroundMessage((payload) => {
   const { title, body } = payload.notification || {};
   self.registration.showNotification(title || 'Plank & Squat Challenge', {
     body: body || "Time to crush today's challenge! 💪",
-    // FIX: corrected icon path — /icon-192.svg exists in public root (was /icons/icon-192.png)
-    icon: '/icon-192.svg',
-    badge: '/icon-192.svg',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     data: payload.data || {},
   });
 });
 
-// When user taps notification, open/focus the app
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil(
