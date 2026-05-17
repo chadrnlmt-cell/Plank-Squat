@@ -11,6 +11,11 @@ import {
 
 const TIME_OPTIONS = getTimeOptions();
 
+// Detect iOS Safari running outside of PWA (Home Screen) mode
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isInStandaloneMode = window.navigator.standalone === true;
+const isIOSBrowser = isIOS && !isInStandaloneMode;
+
 export default function ChallengeReminder({ userId, challengeId, challengeName, challengeActive = true }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -18,7 +23,7 @@ export default function ChallengeReminder({ userId, challengeId, challengeName, 
   const [slot1Enabled, setSlot1Enabled] = useState(false);
   const [slot1Time, setSlot1Time] = useState('07:00');
   const [slot1Saving, setSlot1Saving] = useState(false);
-  const [slot1Status, setSlot1Status] = useState(''); // '' | 'saved' | 'error' | 'denied'
+  const [slot1Status, setSlot1Status] = useState(''); // '' | 'saved' | 'error' | 'denied' | 'unsupported'
 
   // slot 2 state
   const [slot2Enabled, setSlot2Enabled] = useState(false);
@@ -63,7 +68,7 @@ export default function ChallengeReminder({ userId, challengeId, challengeName, 
     }
   };
 
-  // Called after permission confirmed
+  // Called after permission confirmed in modal
   const handlePermissionConfirm = async () => {
     setShowPermModal(false);
     if (pendingSlot !== null) {
@@ -138,9 +143,8 @@ export default function ChallengeReminder({ userId, challengeId, challengeName, 
     const setStatus = slot === 1 ? setSlot1Status : setSlot2Status;
     setTime(newTime);
 
-    // If already enabled, save updated time immediately
+    // If already enabled, silently save the updated time and refresh token
     if (enabled) {
-      // Re-fetch token silently in case it refreshed
       const result = await requestNotificationPermission();
       const token = result.success ? result.token : null;
       if (token) {
@@ -161,6 +165,7 @@ export default function ChallengeReminder({ userId, challengeId, challengeName, 
     const time = slot === 1 ? slot1Time : slot2Time;
     const saving = slot === 1 ? slot1Saving : slot2Saving;
     const status = slot === 1 ? slot1Status : slot2Status;
+    const isDisabled = saving || permissionDenied || !notificationsSupported;
 
     return (
       <div
@@ -183,7 +188,7 @@ export default function ChallengeReminder({ userId, challengeId, challengeName, 
           </span>
           <button
             onClick={() => enabled ? handleDisableSlot(slot) : handleEnableSlot(slot)}
-            disabled={saving || permissionDenied || !notificationsSupported}
+            disabled={isDisabled}
             style={{
               padding: '6px 16px',
               fontSize: '13px',
@@ -192,7 +197,7 @@ export default function ChallengeReminder({ userId, challengeId, challengeName, 
               color: enabled ? 'white' : '#555',
               border: 'none',
               borderRadius: '20px',
-              cursor: saving || permissionDenied || !notificationsSupported ? 'not-allowed' : 'pointer',
+              cursor: isDisabled ? 'not-allowed' : 'pointer',
               transition: 'all 0.2s',
               minWidth: '52px',
             }}
@@ -231,14 +236,25 @@ export default function ChallengeReminder({ userId, challengeId, challengeName, 
           <span style={{ fontSize: '12px', color: '#4CAF50', fontWeight: '600' }}>✓ Reminder saved!</span>
         )}
         {status === 'denied' && (
-          <span style={{ fontSize: '12px', color: '#d32f2f' }}>
-            Notifications blocked. Enable in your browser settings.
-          </span>
+          <div style={{ fontSize: '12px', color: '#c62828', backgroundColor: '#ffebee', padding: '10px', borderRadius: '6px', lineHeight: '1.6' }}>
+            <strong>🚫 Notifications are blocked.</strong> Here's how to fix it:<br />
+            <strong>iPhone:</strong> Settings → Apps → Safari → this site → Notifications → Allow<br />
+            <strong>Android:</strong> Chrome Settings → Site Settings → Notifications → Allow<br />
+            <strong>Desktop Chrome:</strong> Click the 🔒 lock in the address bar → Notifications → Allow<br />
+            Then reload the page and try again.
+          </div>
         )}
         {status === 'unsupported' && (
-          <span style={{ fontSize: '12px', color: '#f57c00' }}>
-            Notifications not supported on this browser.
-          </span>
+          <div style={{ fontSize: '12px', color: '#e65100', backgroundColor: '#fff3e0', padding: '10px', borderRadius: '6px', lineHeight: '1.6' }}>
+            {isIOSBrowser ? (
+              <>
+                <strong>📲 iPhone users:</strong> You must add this app to your Home Screen first.<br />
+                Tap the <strong>Share button</strong> (□↑) in Safari → <strong>"Add to Home Screen"</strong> → open the app from your Home Screen → then set up reminders here.
+              </>
+            ) : (
+              <>⚠️ Your browser doesn't support push notifications. Try Chrome or Edge.</>
+            )}
+          </div>
         )}
         {status === 'error' && (
           <span style={{ fontSize: '12px', color: '#d32f2f' }}>Something went wrong. Try again.</span>
@@ -309,15 +325,30 @@ export default function ChallengeReminder({ userId, challengeId, challengeName, 
             gap: '10px',
           }}
         >
-          {!notificationsSupported && (
+          {/* iOS browser — must install to Home Screen first */}
+          {isIOSBrowser && !notificationsSupported && (
+            <div style={{ fontSize: '13px', color: '#e65100', backgroundColor: '#fff3e0', padding: '12px', borderRadius: '8px', lineHeight: '1.7' }}>
+              <strong>📲 iPhone users:</strong> To receive reminders you must first install this app.<br />
+              In Safari tap the <strong>Share button</strong> (□↑) → <strong>"Add to Home Screen"</strong> → then open the app from your Home Screen and set up reminders here.
+            </div>
+          )}
+
+          {/* Generic unsupported (non-iOS) */}
+          {!notificationsSupported && !isIOSBrowser && (
             <p style={{ fontSize: '13px', color: '#f57c00', margin: 0 }}>
-              ⚠️ Push notifications are not supported on this browser.
+              ⚠️ Your browser doesn't support push notifications. Try Chrome or Edge for the best experience.
             </p>
           )}
+
+          {/* Notifications blocked */}
           {permissionDenied && (
-            <p style={{ fontSize: '13px', color: '#d32f2f', margin: 0 }}>
-              🚫 Notifications are blocked. Go to your browser settings and allow notifications for this site.
-            </p>
+            <div style={{ fontSize: '13px', color: '#c62828', backgroundColor: '#ffebee', padding: '12px', borderRadius: '8px', lineHeight: '1.7' }}>
+              <strong>🚫 Notifications are blocked.</strong> Here's how to re-enable them:<br />
+              <strong>iPhone:</strong> Settings → Apps → Safari → plank-squat.vercel.app → Notifications → Allow<br />
+              <strong>Android Chrome:</strong> Chrome menu → Settings → Site Settings → Notifications → find this site → Allow<br />
+              <strong>Desktop Chrome:</strong> Click the 🔒 lock icon in the address bar → Notifications → Allow<br />
+              Then <strong>reload this page</strong> and try again.
+            </div>
           )}
 
           {renderSlot(1)}
@@ -359,10 +390,18 @@ export default function ChallengeReminder({ userId, challengeId, challengeName, 
               Turn on reminders?
             </h3>
             <p style={{ fontSize: '14px', color: '#666', margin: '0 0 8px 0', lineHeight: '1.5' }}>
-              We'll send you a nudge at the time you choose to keep your <strong>{challengeName}</strong> streak going!
+              We'll send you a daily nudge at the time you pick to keep your <strong>{challengeName}</strong> streak alive! 💪
             </p>
+
+            {/* iPhone-specific install warning inside modal */}
+            {isIOSBrowser && (
+              <div style={{ fontSize: '12px', color: '#e65100', backgroundColor: '#fff3e0', padding: '10px', borderRadius: '8px', margin: '0 0 14px 0', lineHeight: '1.6', textAlign: 'left' }}>
+                📲 <strong>iPhone users:</strong> You must add this app to your Home Screen first — tap the Share button (□↑) → "Add to Home Screen" → open from Home Screen, then come back here.
+              </div>
+            )}
+
             <p style={{ fontSize: '12px', color: '#999', margin: '0 0 20px 0' }}>
-              Reminders work on this device and browser only.
+              Your browser will ask to confirm — tap <strong>Allow</strong> when prompted. Reminders only work on this device.
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
