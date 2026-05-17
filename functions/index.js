@@ -40,9 +40,9 @@ const parseTimeToMinutes = (timeStr) => {
   return h * 60 + m;
 };
 
-// FIX: Get today's date string in the user's own timezone (not UTC).
-// Previously used new Date().toISOString() which is UTC — this caused late-evening
-// reminders (7-8 PM Phoenix) to use tomorrow's UTC date, breaking the lastSentDate check.
+// FIX: Get today's date string (YYYY-MM-DD) in the user's own timezone.
+// Previously used UTC which caused evening reminders (7-8 PM Phoenix) to get
+// the wrong date — UTC is already the next day at that hour.
 const getTodayInTimeZone = (timeZone) => {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {

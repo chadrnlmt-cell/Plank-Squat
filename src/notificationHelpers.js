@@ -7,6 +7,10 @@ import {
   setDoc,
   getDoc,
   Timestamp,
+  collection,
+  query,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 
 const VAPID_KEY = 'BHA23WO3Pq3hunM1-sYJhBYyJBnsazlhZvCFEUc3FoTh7m0RRdJBA-D8Peg0TStSCbSihARi9l7qoaJXbnynMmU';
@@ -26,31 +30,31 @@ export const getRandomMessage = () => {
   return MOTIVATIONAL_MESSAGES[Math.floor(Math.random() * MOTIVATIONAL_MESSAGES.length)];
 };
 
-// FIX: Auto-refresh FCM token on app load if permission already granted.
-// Safari PWA tokens go stale after iOS updates or long background periods.
-// Pass userId and array of challengeIds the user is enrolled in.
-export const refreshFCMTokenIfNeeded = async (userId, challengeIds) => {
+// FIX: Auto-refresh FCM token on app load for users who already granted permission.
+// Safari PWA tokens go stale silently — this keeps the token in Firestore current
+// without requiring the user to manually interact with reminder settings.
+export const refreshFCMTokenIfGranted = async (userId) => {
   try {
-    if (!userId || !challengeIds || challengeIds.length === 0) return;
+    if (!userId) return;
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
 
     const token = await getToken(messaging, { vapidKey: VAPID_KEY });
     if (!token) return;
 
-    for (const challengeId of challengeIds) {
-      for (const slot of [1, 2]) {
-        const reminderId = `${userId}_${challengeId}_${slot}`;
-        const reminderRef = doc(db, "challengeReminders", reminderId);
-        const snap = await getDoc(reminderRef);
-        if (snap.exists() && snap.data().enabled && snap.data().fcmToken !== token) {
-          await setDoc(reminderRef, { fcmToken: token, updatedAt: Timestamp.now() }, { merge: true });
-          console.log(`🔄 Refreshed FCM token for ${reminderId}`);
-        }
-      }
-    }
+    const q = query(
+      collection(db, "challengeReminders"),
+      where("userId", "==", userId),
+      where("enabled", "==", true)
+    );
+    const snap = await getDocs(q);
+    const updates = snap.docs.map((d) =>
+      setDoc(doc(db, "challengeReminders", d.id), { fcmToken: token }, { merge: true })
+    );
+    await Promise.all(updates);
+    console.log(`🔄 FCM token refreshed for ${snap.docs.length} reminder(s)`);
   } catch (err) {
-    console.error('refreshFCMTokenIfNeeded error:', err);
+    console.error('refreshFCMTokenIfGranted error:', err);
   }
 };
 
