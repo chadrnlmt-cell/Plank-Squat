@@ -47,6 +47,7 @@ export default function AdminPanel({ user }) {
     incrementPerDay: 5,
     isActive: true,
     isTeamChallenge: false,
+    rankingMetric: "average", // "average" | "total" — default: average
   };
 
   const [formData, setFormData] = useState(defaultFormState);
@@ -125,6 +126,7 @@ export default function AdminPanel({ user }) {
         incrementPerDay: parseInt(formData.incrementPerDay, 10),
         isActive: formData.isActive,
         isTeamChallenge: formData.isTeamChallenge,
+        rankingMetric: formData.isTeamChallenge ? formData.rankingMetric : null,
         createdAt: Timestamp.now(),
         createdBy: user.email,
         startDate: Timestamp.fromDate(startDateObj),
@@ -169,6 +171,9 @@ export default function AdminPanel({ user }) {
         incrementPerDay: parseInt(editingChallenge.incrementPerDay, 10),
         startDate: Timestamp.fromDate(startDateObj),
         isTeamChallenge: editingChallenge.isTeamChallenge || false,
+        rankingMetric: editingChallenge.isTeamChallenge
+          ? (editingChallenge.rankingMetric || "average")
+          : null,
       });
 
       setEditingChallenge(null);
@@ -227,6 +232,7 @@ export default function AdminPanel({ user }) {
       });
 
       const isPlank = challenge.type === "plank";
+      const rankingMetric = challenge.rankingMetric || "average";
 
       const compareTotals = (a, b) => {
         const aVal = isPlank ? a.totalSeconds : a.totalReps;
@@ -275,6 +281,15 @@ export default function AdminPanel({ user }) {
             avgReps: t.memberCount > 0 ? Math.round(t.totalReps / t.memberCount) : 0,
           };
         });
+
+        // Sort teamStandings by the challenge's rankingMetric before archiving
+        teamStandings.sort((a, b) => {
+          if (rankingMetric === "average") {
+            return isPlank ? b.avgSeconds - a.avgSeconds : b.avgReps - a.avgReps;
+          } else {
+            return isPlank ? b.totalSeconds - a.totalSeconds : b.totalReps - a.totalReps;
+          }
+        });
       }
 
       const startDate = challenge.startDate?.toDate ? challenge.startDate.toDate() : new Date(challenge.startDate);
@@ -287,6 +302,7 @@ export default function AdminPanel({ user }) {
         challengeType: challenge.type,
         challengeDescription: challenge.description,
         isTeamChallenge: challenge.isTeamChallenge || false,
+        rankingMetric: rankingMetric,
         startDate: challenge.startDate,
         endDate: Timestamp.fromDate(endDate),
         numberOfDays: challenge.numberOfDays,
@@ -578,6 +594,7 @@ export default function AdminPanel({ user }) {
       ...challenge,
       startDate: formattedDate,
       isTeamChallenge: challenge.isTeamChallenge || false,
+      rankingMetric: challenge.rankingMetric || "average",
     });
   };
 
@@ -724,6 +741,35 @@ export default function AdminPanel({ user }) {
                   </label>
                   <p style={{ marginLeft: "34px", fontSize: "12px", color: "#666", marginTop: "4px" }}>When enabled, users must select a team when joining this challenge.</p>
                 </div>
+                {/* Ranking Metric — only shown for team challenges */}
+                {formData.isTeamChallenge && (
+                  <div style={{ marginLeft: "0", padding: "12px", backgroundColor: "#f0f7f0", borderRadius: "6px", border: "1px solid #c8e6c9" }}>
+                    <label style={{ display: "block", fontWeight: "bold", marginBottom: "8px" }}>Team Ranking Metric</label>
+                    <p style={{ fontSize: "12px", color: "#555", marginBottom: "8px", marginTop: 0 }}>How teams will be ranked on the leaderboard.</p>
+                    <div style={{ display: "flex", gap: "12px" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                        <input
+                          type="radio"
+                          name="createRankingMetric"
+                          value="average"
+                          checked={formData.rankingMetric === "average"}
+                          onChange={() => setFormData({ ...formData, rankingMetric: "average" })}
+                        />
+                        <span>Average per member <span style={{ fontSize: "11px", color: "#4CAF50", fontWeight: "bold" }}>(recommended)</span></span>
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                        <input
+                          type="radio"
+                          name="createRankingMetric"
+                          value="total"
+                          checked={formData.rankingMetric === "total"}
+                          onChange={() => setFormData({ ...formData, rankingMetric: "total" })}
+                        />
+                        <span>Total (all members combined)</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <button onClick={handleCreateChallenge} style={{ padding: "12px", fontSize: "16px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>Create Challenge</button>
                 </div>
@@ -765,7 +811,7 @@ export default function AdminPanel({ user }) {
                   </div>
                   <div>
                     <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Increment Per Day</label>
-                    <input type="number" value={editingChallenge.numberOfDays} onChange={(e) => setEditingChallenge({ ...editingChallenge, incrementPerDay: parseInt(e.target.value, 10) })} min="0" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
+                    <input type="number" value={editingChallenge.incrementPerDay} onChange={(e) => setEditingChallenge({ ...editingChallenge, incrementPerDay: parseInt(e.target.value, 10) })} min="0" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                   </div>
                   <div>
                     <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -773,6 +819,35 @@ export default function AdminPanel({ user }) {
                       <span style={{ fontWeight: "bold" }}>Team Challenge (requires team selection)</span>
                     </label>
                   </div>
+                  {/* Ranking Metric — only shown for team challenges in edit mode */}
+                  {editingChallenge.isTeamChallenge && (
+                    <div style={{ padding: "12px", backgroundColor: "#f0f7f0", borderRadius: "6px", border: "1px solid #c8e6c9" }}>
+                      <label style={{ display: "block", fontWeight: "bold", marginBottom: "8px" }}>Team Ranking Metric</label>
+                      <p style={{ fontSize: "12px", color: "#555", marginBottom: "8px", marginTop: 0 }}>How teams will be ranked on the leaderboard.</p>
+                      <div style={{ display: "flex", gap: "12px" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                          <input
+                            type="radio"
+                            name="editRankingMetric"
+                            value="average"
+                            checked={(editingChallenge.rankingMetric || "average") === "average"}
+                            onChange={() => setEditingChallenge({ ...editingChallenge, rankingMetric: "average" })}
+                          />
+                          <span>Average per member <span style={{ fontSize: "11px", color: "#4CAF50", fontWeight: "bold" }}>(recommended)</span></span>
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                          <input
+                            type="radio"
+                            name="editRankingMetric"
+                            value="total"
+                            checked={(editingChallenge.rankingMetric || "average") === "total"}
+                            onChange={() => setEditingChallenge({ ...editingChallenge, rankingMetric: "total" })}
+                          />
+                          <span>Total (all members combined)</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
                     <button onClick={handleSaveEdit} style={{ flex: 1, padding: "12px", fontSize: "16px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>Save Changes</button>
                     <button onClick={() => setEditingChallenge(null)} style={{ flex: 1, padding: "12px", fontSize: "16px", backgroundColor: "#999", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>Cancel</button>
@@ -792,15 +867,15 @@ export default function AdminPanel({ user }) {
 
                 {(confirmAction.type === "reset" || confirmAction.type === "forceEnd") && (
                   <div style={{ marginBottom: "20px" }}>
-                    <label style={{ display: "block", fontWeight: "bold", marginBottom: "8px" }}>
-                      Type {confirmAction.type === "reset" ? "RESET" : "END"} to confirm
+                    <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+                      Type "{confirmAction.type === "reset" ? "RESET" : "END"}" to confirm:
                     </label>
                     <input
                       type="text"
                       value={resetConfirmText}
                       onChange={(e) => setResetConfirmText(e.target.value)}
-                      placeholder={`Type ${confirmAction.type === "reset" ? "RESET" : "END"}`}
-                      style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd", fontSize: "14px" }}
+                      placeholder={confirmAction.type === "reset" ? "RESET" : "END"}
+                      style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }}
                     />
                   </div>
                 )}
@@ -808,29 +883,15 @@ export default function AdminPanel({ user }) {
                 <div style={{ display: "flex", gap: "10px" }}>
                   <button
                     onClick={() => {
-                      if (confirmAction.type === "confirmEdit") confirmEdit();
-                      else if (confirmAction.type === "deactivate") confirmDeactivate(confirmAction.challengeId, confirmAction.challenge);
+                      if (confirmAction.type === "deactivate") confirmDeactivate(confirmAction.challengeId, confirmAction.challenge);
                       else if (confirmAction.type === "delete") confirmDelete(confirmAction.challengeId);
                       else if (confirmAction.type === "reset") confirmReset(confirmAction.challengeId);
                       else if (confirmAction.type === "forceEnd") confirmForceEnd(confirmAction.challengeId, confirmAction.challenge);
+                      else if (confirmAction.type === "confirmEdit") confirmEdit();
                     }}
-                    disabled={
-                      (confirmAction.type === "reset" && resetConfirmText !== "RESET") ||
-                      (confirmAction.type === "forceEnd" && resetConfirmText !== "END")
-                    }
-                    style={{
-                      flex: 1,
-                      padding: "12px",
-                      fontSize: "16px",
-                      backgroundColor: ["delete", "reset", "forceEnd"].includes(confirmAction.type) ? "#d32f2f" : "#4CAF50",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "5px",
-                      cursor: (confirmAction.type === "reset" && resetConfirmText !== "RESET") || (confirmAction.type === "forceEnd" && resetConfirmText !== "END") ? "not-allowed" : "pointer",
-                      opacity: (confirmAction.type === "reset" && resetConfirmText !== "RESET") || (confirmAction.type === "forceEnd" && resetConfirmText !== "END") ? 0.5 : 1,
-                    }}
+                    style={{ flex: 1, padding: "12px", fontSize: "16px", backgroundColor: confirmAction.type === "delete" || confirmAction.type === "forceEnd" ? "#d32f2f" : "#4CAF50", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}
                   >
-                    {confirmAction.type === "confirmEdit" ? "Save Changes" : confirmAction.type === "deactivate" ? "Deactivate" : confirmAction.type === "delete" ? "Delete" : confirmAction.type === "forceEnd" ? "Force End" : "Confirm"}
+                    Confirm
                   </button>
                   <button
                     onClick={() => { setConfirmAction(null); setResetConfirmText(""); }}
@@ -844,109 +905,87 @@ export default function AdminPanel({ user }) {
           )}
 
           {loading ? (
-            <div style={{ textAlign: "center", padding: "40px" }}><p>Loading challenges...</p></div>
+            <p>Loading challenges...</p>
           ) : challenges.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "40px", backgroundColor: "white", borderRadius: "8px" }}>
-              <p style={{ color: "#999" }}>No challenges yet. Create one to get started!</p>
-            </div>
+            <p style={{ color: "#999" }}>No challenges yet. Create one above.</p>
           ) : (
-            <>
-              <div>
-                <h2 style={{ marginTop: "30px", marginBottom: "15px" }}>Active Challenges</h2>
-                {challenges.filter((c) => c.isActive).length === 0 ? (
-                  <p style={{ color: "#999" }}>No active challenges</p>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-                    {challenges.filter((c) => c.isActive).map((challenge) => (
-                      <div key={challenge.id} style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                          <div>
-                            <h3 style={{ margin: "0 0 5px 0" }}>
-                              {challenge.name}
-                              {challenge.isTeamChallenge && (
-                                <span style={{ marginLeft: "8px", fontSize: "12px", padding: "2px 8px", backgroundColor: "#4CAF50", color: "white", borderRadius: "4px" }}>TEAM</span>
-                              )}
-                            </h3>
-                            <span style={{ color: "#999", fontSize: "14px" }}>{challenge.userCount} users</span>
-                          </div>
-                        </div>
-                        <p style={{ margin: "5px 0", color: "#666", fontSize: "14px" }}>{challenge.numberOfDays} days • Starts {challenge.startDate?.toDate ? challenge.startDate.toDate().toLocaleDateString() : ""}</p>
-                        <p style={{ margin: "5px 0", color: "#666", fontSize: "14px" }}>{challenge.description}</p>
-                        <div style={{ display: "flex", gap: "8px", marginTop: "15px", flexWrap: "wrap" }}>
-                          <button onClick={() => handleEditClick(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Edit</button>
-                          <button onClick={() => handleDeactivate(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#FF9800", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Deactivate</button>
-                          <button onClick={() => handleForceEnd(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#9C27B0", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Force End</button>
-                          <button onClick={() => handleReset(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#FF5722", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Reset Challenge</button>
-                          <button onClick={() => handleDelete(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#d32f2f", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Delete</button>
-                          <button onClick={() => loadMissedDaysForChallenge(challenge.id)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#6A1B9A", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>View Missed Days</button>
-                        </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+              {challenges.map((challenge) => (
+                <div
+                  key={challenge.id}
+                  style={{
+                    backgroundColor: "white",
+                    padding: "20px",
+                    borderRadius: "8px",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                    borderLeft: `4px solid ${challenge.isActive ? "#4CAF50" : "#999"}`,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px" }}>
+                    <div style={{ flex: 1, minWidth: "200px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <h3 style={{ margin: 0 }}>{challenge.name}</h3>
+                        <span style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "3px", backgroundColor: challenge.isActive ? "#e8f5e9" : "#f5f5f5", color: challenge.isActive ? "#2e7d32" : "#999", fontWeight: "bold" }}>
+                          {challenge.isActive ? "ACTIVE" : "INACTIVE"}
+                        </span>
+                        {challenge.isTeamChallenge && (
+                          <span style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "3px", backgroundColor: "#e3f2fd", color: "#1565c0", fontWeight: "bold" }}>
+                            TEAM
+                          </span>
+                        )}
                       </div>
-                    ))}
+                      <p style={{ margin: "4px 0 8px", color: "#666", fontSize: "14px" }}>{challenge.description}</p>
+                      <div style={{ fontSize: "13px", color: "#555", display: "flex", gap: "16px", flexWrap: "wrap" }}>
+                        <span>Type: {challenge.type}</span>
+                        <span>Days: {challenge.numberOfDays}</span>
+                        <span>Start: {challenge.startingValue}{challenge.type === "plank" ? "s" : " reps"}</span>
+                        <span>+{challenge.incrementPerDay}/day</span>
+                        <span>👥 {challenge.userCount} enrolled</span>
+                        {challenge.isTeamChallenge && challenge.rankingMetric && (
+                          <span style={{ color: "#4CAF50" }}>Ranked by: {challenge.rankingMetric === "average" ? "avg/member" : "total"}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      <button onClick={() => handleEditClick(challenge)} style={{ padding: "8px 16px", fontSize: "14px", backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>Edit</button>
+                      <button onClick={() => handleDeactivate(challenge)} style={{ padding: "8px 16px", fontSize: "14px", backgroundColor: challenge.isActive ? "#FF9800" : "#4CAF50", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>
+                        {challenge.isActive ? "Deactivate" : "Activate"}
+                      </button>
+                      <button onClick={() => handleReset(challenge)} style={{ padding: "8px 16px", fontSize: "14px", backgroundColor: "#9C27B0", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>Reset</button>
+                      <button onClick={() => handleForceEnd(challenge)} disabled={!challenge.isActive} style={{ padding: "8px 16px", fontSize: "14px", backgroundColor: challenge.isActive ? "#F44336" : "#ccc", color: "white", border: "none", borderRadius: "5px", cursor: challenge.isActive ? "pointer" : "not-allowed" }}>Force End</button>
+                      <button onClick={() => handleDelete(challenge)} style={{ padding: "8px 16px", fontSize: "14px", backgroundColor: "#d32f2f", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}>Delete</button>
+                    </div>
                   </div>
-                )}
-              </div>
 
-              <div>
-                <h2 style={{ marginTop: "40px", marginBottom: "15px", color: "#999" }}>Inactive Challenges</h2>
-                {challenges.filter((c) => !c.isActive).length === 0 ? (
-                  <p style={{ color: "#999" }}>No inactive challenges</p>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
-                    {challenges.filter((c) => !c.isActive).map((challenge) => (
-                      <div key={challenge.id} style={{ backgroundColor: "#f0f0f0", padding: "20px", borderRadius: "8px", opacity: 0.7, boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                          <div>
-                            <h3 style={{ margin: "0 0 5px 0", color: "#666" }}>
-                              {challenge.name}
-                              {challenge.isTeamChallenge && (
-                                <span style={{ marginLeft: "8px", fontSize: "12px", padding: "2px 8px", backgroundColor: "#999", color: "white", borderRadius: "4px" }}>TEAM</span>
-                              )}
-                            </h3>
-                            <span style={{ color: "#999", fontSize: "14px" }}>{challenge.userCount} users</span>
-                          </div>
+                  {/* Missed Days Section */}
+                  {challenge.isActive && (
+                    <div style={{ marginTop: "12px", borderTop: "1px solid #eee", paddingTop: "12px" }}>
+                      <button
+                        onClick={() => loadMissedDaysForChallenge(challenge.id)}
+                        style={{ padding: "6px 14px", fontSize: "13px", backgroundColor: "#607D8B", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
+                      >
+                        {missedLoading ? "Loading..." : "View Missed Days"}
+                      </button>
+
+                      {Object.keys(missedByDay).length > 0 && (
+                        <div style={{ marginTop: "10px" }}>
+                          <strong>Missed Days:</strong>
+                          {Object.keys(missedByDay)
+                            .sort((a, b) => Number(a) - Number(b))
+                            .map((day) => (
+                              <div key={day} style={{ marginTop: "6px", fontSize: "13px" }}>
+                                <span style={{ fontWeight: "bold" }}>Day {day}:</span>{" "}
+                                {missedByDay[day].map((u) => u.displayName).join(", ")}
+                              </div>
+                            ))}
                         </div>
-                        <p style={{ margin: "5px 0", color: "#999", fontSize: "14px" }}>INACTIVE</p>
-                        <p style={{ margin: "5px 0", color: "#999", fontSize: "14px" }}>{challenge.numberOfDays} days • Starts {challenge.startDate?.toDate ? challenge.startDate.toDate().toLocaleDateString() : ""}</p>
-                        <p style={{ margin: "5px 0", color: "#999", fontSize: "14px" }}>{challenge.description}</p>
-                        <div style={{ display: "flex", gap: "8px", marginTop: "15px", flexWrap: "wrap" }}>
-                          <button onClick={() => handleEditClick(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#2196F3", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Edit</button>
-                          <button onClick={() => handleDeactivate(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#4CAF50", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Activate</button>
-                          <button onClick={() => handleDelete(challenge)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#d32f2f", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>Delete</button>
-                          <button onClick={() => loadMissedDaysForChallenge(challenge.id)} style={{ padding: "8px 12px", fontSize: "14px", backgroundColor: "#6A1B9A", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>View Missed Days</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
-
-          <div style={{ marginTop: "40px", padding: "20px", backgroundColor: "white", borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
-            <h2>Missed Days (Selected Challenge)</h2>
-            {missedLoading ? (
-              <p>Loading missed days...</p>
-            ) : Object.keys(missedByDay).length === 0 ? (
-              <p style={{ color: "#999" }}>Click "View Missed Days" on a challenge above to see details.</p>
-            ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "10px", fontSize: "14px" }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left", padding: "8px", borderBottom: "1px solid #ddd" }}>Day</th>
-                    <th style={{ textAlign: "left", padding: "8px", borderBottom: "1px solid #ddd" }}>Users Who Missed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(missedByDay).sort((a, b) => Number(a[0]) - Number(b[0])).map(([day, users]) => (
-                    <tr key={day}>
-                      <td style={{ padding: "8px", borderBottom: "1px solid #eee", whiteSpace: "nowrap" }}>Day {day}</td>
-                      <td style={{ padding: "8px", borderBottom: "1px solid #eee" }}>{users.map((u) => u.displayName || u.userId).join(", ")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
         </>
       )}
     </div>

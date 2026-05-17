@@ -14,7 +14,7 @@ export default function Leaderboard({ user, challenges, targetChallengeId }) {
   const [selectedTeamFilter, setSelectedTeamFilter] = useState("all"); // "all" or teamId
   const [teamStandings, setTeamStandings] = useState([]);
   const [lastFetched, setLastFetched] = useState(null); // timestamp of last fetch
-  const [teamViewMode, setTeamViewMode] = useState("total"); // "total" | "average"
+  const [teamViewMode, setTeamViewMode] = useState("average"); // "total" | "average" — default: average
 
   // History viewing
   const [viewMode, setViewMode] = useState("current"); // "current" | "previous1" | "previous2"
@@ -39,6 +39,20 @@ export default function Leaderboard({ user, challenges, targetChallengeId }) {
       setViewMode("previous2");
     }
   }, [targetChallengeId, historyData, loadingHistory]);
+
+  // Auto-set teamViewMode based on challenge's rankingMetric
+  useEffect(() => {
+    if (viewMode === "current" && activeChallenge) {
+      const metric = activeChallenge.rankingMetric || "average";
+      setTeamViewMode(metric);
+    } else if (viewMode === "previous1" && historyData.previous1) {
+      const metric = historyData.previous1.rankingMetric || "average";
+      setTeamViewMode(metric);
+    } else if (viewMode === "previous2" && historyData.previous2) {
+      const metric = historyData.previous2.rankingMetric || "average";
+      setTeamViewMode(metric);
+    }
+  }, [activeChallenge, viewMode, historyData]);
 
   // Check if active challenge is a team challenge
   const isTeamChallenge = viewMode === "current" 
@@ -362,7 +376,7 @@ export default function Leaderboard({ user, challenges, targetChallengeId }) {
       (viewMode === "previous2" && historyData.previous2?.topBest) ||
       [];
 
-  // Sort team standings based on view mode
+  // Sort team standings by rankingMetric (average by default)
   const sortedTeamStandings = [...viewData.teamStandings].sort((a, b) => {
     if (teamViewMode === "average") {
       const aVal = isPlank ? a.avgSeconds : a.avgReps;
@@ -700,16 +714,19 @@ export default function Leaderboard({ user, challenges, targetChallengeId }) {
                           style={{ backgroundColor: "white", borderTop: "1px solid #eee" }}
                         >
                           <td style={{ padding: "8px" }}>{idx + 1}</td>
-                          <td style={{ padding: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
-                            <div
-                              style={{
-                                width: "12px",
-                                height: "12px",
-                                borderRadius: "50%",
-                                backgroundColor: team.teamColor,
-                              }}
-                            />
-                            {team.teamName}
+                          <td style={{ padding: "8px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <div
+                                style={{
+                                  width: "12px",
+                                  height: "12px",
+                                  borderRadius: "50%",
+                                  backgroundColor: team.teamColor,
+                                  flexShrink: 0,
+                                }}
+                              />
+                              {team.teamName}
+                            </div>
                           </td>
                           <td style={{ padding: "8px", textAlign: "center" }}>{team.memberCount}</td>
                           <td style={{ padding: "8px", textAlign: "right" }}>
@@ -751,14 +768,16 @@ export default function Leaderboard({ user, challenges, targetChallengeId }) {
             </div>
           )}
 
-          {/* Top 10 total */}
+          {/* Individual Leaderboard — Top 10 by Total Time Accumulated */}
           <div>
-            <h3 style={{ marginBottom: "8px" }}>
-              Top 10 by{" "}
-              {isPlank ? "Total Plank Time (seconds)" : "Total Squat Reps"}
-              {viewMode === "current" && isTeamChallenge && selectedTeamFilter !== "all" &&
-                ` - ${teams.find((t) => t.id === selectedTeamFilter)?.name || ""}`}
+            <h3 style={{ marginBottom: "4px" }}>
+              Top 10 — Total Time Accumulated
             </h3>
+            <p style={{ fontSize: "12px", color: "#888", marginBottom: "8px", marginTop: 0 }}>
+              {isPlank ? "Cumulative plank seconds across all completed days" : "Cumulative squat reps across all completed days"}
+              {viewMode === "current" && isTeamChallenge && selectedTeamFilter !== "all" &&
+                ` — ${teams.find((t) => t.id === selectedTeamFilter)?.name || ""}`}
+            </p>
             <div style={{ borderRadius: "8px", border: "1px solid #ddd", overflow: "hidden" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
                 <thead style={{ backgroundColor: "#f0f0f0" }}>
@@ -781,18 +800,21 @@ export default function Leaderboard({ user, challenges, targetChallengeId }) {
                         }}
                       >
                         <td style={{ padding: "8px" }}>{idx + 1}</td>
-                        <td style={{ padding: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
-                          {isTeamChallenge && teamInfo && (
-                            <div
-                              style={{
-                                width: "10px",
-                                height: "10px",
-                                borderRadius: "50%",
-                                backgroundColor: teamInfo.color,
-                              }}
-                            />
-                          )}
-                          {row.displayName || "Anonymous"}
+                        <td style={{ padding: "8px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            {isTeamChallenge && teamInfo && (
+                              <div
+                                style={{
+                                  width: "10px",
+                                  height: "10px",
+                                  borderRadius: "50%",
+                                  backgroundColor: teamInfo.color,
+                                  flexShrink: 0,
+                                }}
+                              />
+                            )}
+                            {row.displayName || "Anonymous"}
+                          </div>
                         </td>
                         <td style={{ padding: "8px", textAlign: "right" }}>
                           {isPlank ? formatSeconds(totalVal) : totalVal}
@@ -807,11 +829,14 @@ export default function Leaderboard({ user, challenges, targetChallengeId }) {
 
           {/* Top 5 best single day */}
           <div>
-            <h3 style={{ marginBottom: "8px" }}>
-              Top 5 by Best Single Day
-              {viewMode === "current" && isTeamChallenge && selectedTeamFilter !== "all" &&
-                ` - ${teams.find((t) => t.id === selectedTeamFilter)?.name || ""}`}
+            <h3 style={{ marginBottom: "4px" }}>
+              Top 5 — Best Single Day
             </h3>
+            <p style={{ fontSize: "12px", color: "#888", marginBottom: "8px", marginTop: 0 }}>
+              {isPlank ? "Highest single-day plank time" : "Most reps in a single day"}
+              {viewMode === "current" && isTeamChallenge && selectedTeamFilter !== "all" &&
+                ` — ${teams.find((t) => t.id === selectedTeamFilter)?.name || ""}`}
+            </p>
             <div style={{ borderRadius: "8px", border: "1px solid #ddd", overflow: "hidden" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
                 <thead style={{ backgroundColor: "#f0f0f0" }}>
@@ -834,18 +859,21 @@ export default function Leaderboard({ user, challenges, targetChallengeId }) {
                         }}
                       >
                         <td style={{ padding: "8px" }}>{idx + 1}</td>
-                        <td style={{ padding: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
-                          {isTeamChallenge && teamInfo && (
-                            <div
-                              style={{
-                                width: "10px",
-                                height: "10px",
-                                borderRadius: "50%",
-                                backgroundColor: teamInfo.color,
-                              }}
-                            />
-                          )}
-                          {row.displayName || "Anonymous"}
+                        <td style={{ padding: "8px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            {isTeamChallenge && teamInfo && (
+                              <div
+                                style={{
+                                  width: "10px",
+                                  height: "10px",
+                                  borderRadius: "50%",
+                                  backgroundColor: teamInfo.color,
+                                  flexShrink: 0,
+                                }}
+                              />
+                            )}
+                            {row.displayName || "Anonymous"}
+                          </div>
                         </td>
                         <td style={{ padding: "8px", textAlign: "right" }}>
                           {isPlank ? formatSeconds(bestVal) : bestVal}
