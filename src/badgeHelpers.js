@@ -362,10 +362,170 @@ export async function breakConsecutiveRun(userId, challengeId = null) {
 }
 
 // ---------------------------------------------------------------------------
+// TEAM BADGE HELPERS
+// ---------------------------------------------------------------------------
+
+/**
+ * Award team badges at challenge end.
+ *
+ * Three team badges:
+ *  1. "topTeam"      — members of the highest-average-time/reps team
+ *  2. "teamMVP"      — the single top individual performer on a team challenge
+ *  3. "perfectTeamWeek" — any member whose entire team completed every day of
+ *                         at least one 7-day window without a miss
+ *
+ * Badge is stored on userStats as:
+ *   badges.team.<challengeId>.topTeam: true
+ *   badges.team.<challengeId>.teamMVP: true
+ *   badges.team.<challengeId>.perfectTeamWeek: true
+ */
+export async function awardTeamBadgesOnChallengeEnd(challengeId, challengeType) {
+  try {
+    // 1. Load all challengeUserStats for this challenge
+    const statsQuery = query(
+      collection(db, "challengeUserStats"),
+      where("challengeId", "==", challengeId)
+    );
+    const statsSnap = await getDocs(statsQuery);
+    if (statsSnap.empty) return;
+
+    const entries = statsSnap.docs.map((d) => ({
+      userId: d.data().userId,
+      teamId: d.data().teamId || null,
+      totalSeconds: d.data().totalSeconds || 0,
+      totalReps: d.data().totalReps || 0,
+      bestSeconds: d.data().bestSeconds || 0,
+      bestReps: d.data().bestReps || 0,
+    })).filter((e) => e.userId);
+
+    const isPlank = challengeType === "plank";
+    const getValue = (e) => (isPlank ? e.totalSeconds : e.totalReps);
+
+    // ── 1. Top Team badge: members of the team with the highest average ──
+    const teamEntries = entries.filter((e) => e.teamId);
+    const teamTotals = {};
+    teamEntries.forEach((e) => {
+      if (!teamTotals[e.teamId]) teamTotals[e.teamId] = { sum: 0, count: 0, members: [] };
+      teamTotals[e.teamId].sum += getValue(e);
+      teamTotals[e.teamId].count += 1;
+      teamTotals[e.teamId].members.push(e.userId);
+    });
+
+    let topTeamId = null;
+    let topTeamAvg = -1;
+    Object.entries(teamTotals).forEach(([tid, data]) => {
+      const avg = data.count > 0 ? data.sum / data.count : 0;
+      if (avg > topTeamAvg) {
+        topTeamAvg = avg;
+        topTeamId = tid;
+      }
+    });
+    const topTeamMembers = topTeamId ? (teamTotals[topTeamId]?.members || []) : [];
+
+    // ── 2. Team MVP badge: single highest individual performer on a team ──
+    const teamOnlyEntries = entries.filter((e) => e.teamId);
+    let mvpUserId = null;
+    let mvpBest = -1;
+    teamOnlyEntries.forEach((e) => {
+      const v = getValue(e);
+      if (v > mvpBest) {
+        mvpBest = v;
+        mvpUserId = e.userId;
+      }
+    });
+
+    // ── 3. Perfect Team Week badge: any 7-day window where ALL team members
+    //        logged a success on every day in that window ──
+    // Load all success attempts for this challenge
+    const attQuery = query(
+      collection(db, "attempts"),
+      where("challengeId", "==", challengeId),
+      where("success", "==", true)
+    );
+    const attSnap = await getDocs(attQuery);
+
+    // Build a map: teamId → { userId → Set<day> }
+    const teamDayMap = {}; // teamId → userId → Set<day>
+    const userTeamMap = {}; // userId → teamId (from entries)
+    teamOnlyEntries.forEach((e) => { userTeamMap[e.userId] = e.teamId; });
+
+    attSnap.forEach((d) => {
+      const uid = d.data().userId;
+      const day = d.data().day;
+      const tid = userTeamMap[uid];
+      if (!tid || !uid || !day) return;
+      if (!teamDayMap[tid]) teamDayMap[tid] = {};
+      if (!teamDayMap[tid][uid]) teamDayMap[tid][uid] = new Set();
+      teamDayMap[tid][uid].add(day);
+    });
+
+    // For each team, find its members and check any 7-day consecutive window
+    const perfectTeamWeekUserIds = new Set();
+    Object.entries(teamDayMap).forEach(([tid, userDays]) => {
+      const members = Object.keys(userDays);
+      if (members.length < 2) return; // Need at least 2 members for a team badge
+
+      // Find all days any member has completed
+      const allDays = new Set();
+      members.forEach((uid) => userDays[uid].forEach((d) => allDays.add(d)));
+      const sortedDays = [...allDays].sort((a, b) => a - b);
+
+      // Check each 7-day window starting from sortedDays values
+      for (let i = 0; i < sortedDays.length; i++) {
+        const startDay = sortedDays[i];
+        const windowDays = [startDay, startDay+1, startDay+2, startDay+3, startDay+4, startDay+5, startDay+6];
+        // Every member must have completed every day in this window
+        const allComplete = members.every((uid) =>
+          windowDays.every((day) => userDays[uid].has(day))
+        );
+        if (allComplete) {
+          members.forEach((uid) => perfectTeamWeekUserIds.add(uid));
+          break; // One qualifying window is enough for this team
+        }
+      }
+    });
+
+    // ── Write badges to each userStats doc ──
+    for (const entry of entries) {
+      if (!entry.teamId) continue; // skip non-team participants
+
+      const badgeUpdates = {};
+      if (topTeamMembers.includes(entry.userId)) {
+        badgeUpdates[`badges.team.${challengeId}.topTeam`] = true;
+      }
+      if (entry.userId === mvpUserId) {
+        badgeUpdates[`badges.team.${challengeId}.teamMVP`] = true;
+      }
+      if (perfectTeamWeekUserIds.has(entry.userId)) {
+        badgeUpdates[`badges.team.${challengeId}.perfectTeamWeek`] = true;
+      }
+
+      if (Object.keys(badgeUpdates).length === 0) continue;
+
+      try {
+        const userStatsRef = doc(db, "userStats", entry.userId);
+        const snap = await getDoc(userStatsRef);
+        if (!snap.exists()) continue;
+        await updateDoc(userStatsRef, {
+          ...badgeUpdates,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (userErr) {
+        console.error(`awardTeamBadgesOnChallengeEnd error for user ${entry.userId}:`, userErr);
+      }
+    }
+
+    console.log(`awardTeamBadgesOnChallengeEnd complete for challenge ${challengeId}`);
+  } catch (err) {
+    console.error("awardTeamBadgesOnChallengeEnd error:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // CHALLENGE-END FINALIZATION
 // ---------------------------------------------------------------------------
 
-export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
+export async function finalizeAllStreaksOnChallengeEnd(challengeId, challengeType) {
   try {
     const ucQuery = query(
       collection(db, "userChallenges"),
@@ -373,8 +533,12 @@ export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
     );
     const ucSnap = await getDocs(ucQuery);
 
+    // Detect if this is a team challenge by checking if any participant has a teamId
+    let isTeamChallenge = false;
+
     for (const ucDoc of ucSnap.docs) {
       const ucData = ucDoc.data();
+      if (ucData.teamId) { isTeamChallenge = true; }
       const userId = ucData.userId;
       if (!userId) continue;
 
@@ -388,8 +552,6 @@ export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
         const legacy = getLegacyBadgeData(statsData);
 
         // ── Legacy attribution: always run regardless of badge levels ──
-        // Stamps any floating challengeId: null badges → this challengeId
-        // so admin reports can show which challenge they were earned in.
         let legacyRunBadges = legacy.earnedConsecutiveRunBadges.map((item) =>
           item.challengeId === null ? { ...item, challengeId } : item
         );
@@ -399,7 +561,7 @@ export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
 
         const updates = {};
 
-        // ── Streak badge finalization: only write if there's something to move ──
+        // ── Streak badge finalization ──
         if (challengeBadges.currentStreakBadgeLevel > 0) {
           const level = challengeBadges.currentStreakBadgeLevel;
           const updated = { ...challengeBadges.completedStreakBadges };
@@ -408,7 +570,7 @@ export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
           updates[`badges.challenges.${challengeId}.currentStreakBadgeLevel`] = 0;
         }
 
-        // ── Time badge finalization: only write if there's something to move ──
+        // ── Time badge finalization ──
         if (challengeBadges.currentTimeBadgeLevel > 0) {
           const level = challengeBadges.currentTimeBadgeLevel;
           const updatedTime = { ...challengeBadges.completedTimeBadges };
@@ -417,7 +579,6 @@ export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
           updates[`badges.challenges.${challengeId}.currentTimeBadgeLevel`] = 0;
         }
 
-        // Always include legacy attribution and timestamp
         updates["badges.legacy.earnedConsecutiveRunBadges"] = legacyRunBadges;
         updates["badges.legacy.earnedTimeBadges"] = legacyTimeBadges;
         updates["updatedAt"] = serverTimestamp();
@@ -435,6 +596,11 @@ export async function finalizeAllStreaksOnChallengeEnd(challengeId) {
       } catch (userErr) {
         console.error(`finalizeAllStreaksOnChallengeEnd error for user ${userId}:`, userErr);
       }
+    }
+
+    // ── Award team badges if this is a team challenge ──
+    if (isTeamChallenge && challengeType) {
+      await awardTeamBadgesOnChallengeEnd(challengeId, challengeType);
     }
 
     console.log(`finalizeAllStreaksOnChallengeEnd complete for challenge ${challengeId}`);
@@ -487,6 +653,8 @@ export async function clearChallengeBadgesOnReset(challengeId) {
             currentTimeBadgeLevel: 0,
             completedTimeBadges: {},
           },
+          // Also clear any team badges for this challenge
+          [`badges.team.${challengeId}`]: null,
           "badges.legacy.earnedConsecutiveRunBadges": filteredRunBadges,
           "badges.legacy.earnedTimeBadges": filteredTimeBadges,
           "badges.legacy.consecutiveRunBadgeLevel": newRunBadgeLevel,
@@ -662,12 +830,14 @@ export async function getAllUserBadges(userId) {
         allMultipliers: { double: 0, triple: 0, quadruple: 0 },
         allTimeBadges: {},
         byChallengeId: {},
+        teamBadges: {},
         legacy: getLegacyBadgeData({}),
       };
     }
 
     const userStatsData = userStatsSnap.data();
     const challenges = userStatsData.badges?.challenges || {};
+    const teamBadges = userStatsData.badges?.team || {};
 
     const allStreakBadges = { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 };
     let totalDouble = 0;
@@ -700,6 +870,7 @@ export async function getAllUserBadges(userId) {
       allMultipliers: { double: totalDouble, triple: totalTriple, quadruple: totalQuadruple },
       allTimeBadges,
       byChallengeId: challenges,
+      teamBadges,
       legacy: getLegacyBadgeData(userStatsData),
     };
   } catch (error) {
@@ -709,6 +880,7 @@ export async function getAllUserBadges(userId) {
       allMultipliers: { double: 0, triple: 0, quadruple: 0 },
       allTimeBadges: {},
       byChallengeId: {},
+      teamBadges: {},
       legacy: getLegacyBadgeData({}),
     };
   }
@@ -740,5 +912,21 @@ export async function getLegacyBadges(userId) {
   } catch (err) {
     console.error("getLegacyBadges error:", err);
     return getLegacyBadgeData({});
+  }
+}
+
+/**
+ * Get team badges for a specific user (all challenges)
+ * Returns { [challengeId]: { topTeam, teamMVP, perfectTeamWeek } }
+ */
+export async function getTeamBadges(userId) {
+  try {
+    const userStatsRef = doc(db, "userStats", userId);
+    const snap = await getDoc(userStatsRef);
+    if (!snap.exists()) return {};
+    return snap.data().badges?.team || {};
+  } catch (err) {
+    console.error("getTeamBadges error:", err);
+    return {};
   }
 }
