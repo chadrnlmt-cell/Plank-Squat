@@ -1144,21 +1144,14 @@ export default function App() {
                     gap: "15px",
                   }}
                 >
+                  {/* PracticeCard now contains ChallengeReminder internally */}
                   {practiceJoined && (
-                    <>
-                      <PracticeCard
-                        key={`practice-${practiceReloadKey}`}
-                        userId={user.uid}
-                        onStartPractice={handleStartPractice}
-                        onLeft={handlePracticeLeft}
-                      />
-                      {/* Reminder section — identical behavior to regular challenges */}
-                      <ChallengeReminder
-                        userId={user.uid}
-                        challengeId={PRACTICE_CHALLENGE_ID}
-                        challengeName="Practice Session"
-                      />
-                    </>
+                    <PracticeCard
+                      key={`practice-${practiceReloadKey}`}
+                      userId={user.uid}
+                      onStartPractice={handleStartPractice}
+                      onLeft={handlePracticeLeft}
+                    />
                   )}
                   {activeChallenges.map((userChallenge) => {
                     const canStart = canStartToday(userChallenge);

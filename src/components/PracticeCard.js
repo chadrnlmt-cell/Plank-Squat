@@ -1,6 +1,8 @@
 // src/components/PracticeCard.js
 import React, { useState, useEffect } from "react";
 import { getPracticeStats, leavePractice } from "../practiceHelpers";
+import ChallengeReminder from "./ChallengeReminder";
+import { PRACTICE_CHALLENGE_ID } from "../practiceConstants";
 
 function formatSeconds(sec) {
   const s = Number(sec) || 0;
@@ -255,6 +257,13 @@ export default function PracticeCard({
           >
             🏋️ Start Practice Session
           </button>
+
+          {/* Reminder section — same position and behavior as inside a challenge card */}
+          <ChallengeReminder
+            userId={userId}
+            challengeId={PRACTICE_CHALLENGE_ID}
+            challengeName="Practice Session"
+          />
 
           <div style={{ textAlign: "center", marginTop: "10px" }}>
             <button
