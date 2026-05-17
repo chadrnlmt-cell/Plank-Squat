@@ -19,8 +19,8 @@ const MOTIVATIONAL_MESSAGES = [
 const getRandomMessage = () =>
   MOTIVATIONAL_MESSAGES[Math.floor(Math.random() * MOTIVATIONAL_MESSAGES.length)];
 
-// Returns current HH:MM in a given IANA timezone
-const getCurrentTimeInZone = (timeZone) => {
+// Returns current time in minutes-since-midnight for a given IANA timezone
+const getMinutesSinceMidnight = (timeZone) => {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone,
@@ -28,16 +28,22 @@ const getCurrentTimeInZone = (timeZone) => {
       minute: "2-digit",
       hour12: false,
     }).formatToParts(new Date());
-    const h = parts.find((p) => p.type === "hour").value.padStart(2, "0");
-    const m = parts.find((p) => p.type === "minute").value.padStart(2, "0");
-    return `${h}:${m}`;
+    const h = parseInt(parts.find((p) => p.type === "hour").value, 10);
+    const m = parseInt(parts.find((p) => p.type === "minute").value, 10);
+    return h * 60 + m;
   } catch {
     return null;
   }
 };
 
-// Runs every minute — checks challengeReminders for any that match current time
-exports.sendChallengeReminders = onSchedule("every 1 minutes", async () => {
+// Parse "HH:MM" string to minutes since midnight
+const parseTimeToMinutes = (timeStr) => {
+  const [h, m] = timeStr.split(":").map(Number);
+  return h * 60 + m;
+};
+
+// Runs every 30 minutes — checks challengeReminders for any that fall within the current 30-min window
+exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
   const db = getFirestore();
   const messaging = getMessaging();
 
@@ -64,8 +70,14 @@ exports.sendChallengeReminders = onSchedule("every 1 minutes", async () => {
     // Don't send twice in the same day
     if (lastSentDate === today) return;
 
-    const currentTime = getCurrentTimeInZone(timeZone);
-    if (currentTime !== time) return;
+    const currentMinutes = getMinutesSinceMidnight(timeZone);
+    if (currentMinutes === null) return;
+
+    const reminderMinutes = parseTimeToMinutes(time);
+
+    // Fire if the reminder time falls within the past 30-minute window
+    const diff = currentMinutes - reminderMinutes;
+    if (diff < 0 || diff >= 30) return;
 
     const message = getRandomMessage();
 
