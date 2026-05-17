@@ -38,7 +38,7 @@ import ChallengeEndSummaryModal from "./components/ChallengeEndSummaryModal";
 import ChallengeReminder from "./components/ChallengeReminder";
 import { PRACTICE_CHALLENGE_ID, PRACTICE_TARGET_SECONDS } from "./practiceConstants";
 import { isJoinedPractice, joinPractice } from "./practiceHelpers";
-import { initForegroundNotifications } from "./notificationHelpers";
+import { initForegroundNotifications, refreshFCMTokenIfGranted } from "./notificationHelpers";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -79,6 +79,8 @@ export default function App() {
         // Check practice join status
         const joined = await isJoinedPractice(firebaseUser.uid);
         setIsPracticeJoined(joined);
+        // Refresh FCM token for all enabled reminders on login
+        refreshFCMTokenIfGranted(firebaseUser.uid);
       } else {
         setUserChallenges([]);
         setIsPracticeJoined(false);
@@ -509,7 +511,7 @@ export default function App() {
         {/* ── Available Tab ── */}
         {activeTab === "available" && (
           <div>
-            {/* Practice join card — shown only when NOT joined, just like any other challenge */}
+            {/* Practice join card */}
             {!isPracticeJoined && (
               <div
                 className="card"
@@ -589,7 +591,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Practice card — shown on Active tab when joined, same as real challenges */}
+            {/* Practice card */}
             {isPracticeJoined && (
               <div style={{ display: "flex", flexDirection: "column", marginBottom: "16px" }}>
                 <PracticeCard
@@ -598,11 +600,9 @@ export default function App() {
                   onStartPractice={handleStartPractice}
                   onLeft={() => {
                     setIsPracticeJoined(false);
-                    // If no other active challenges, drop back to Available tab
                     if (activeChallenges.length === 0) setActiveTab("available");
                   }}
                 />
-                {/* ChallengeReminder lives outside PracticeCard, exactly like real challenge cards */}
                 <ChallengeReminder
                   userId={user.uid}
                   challengeId={PRACTICE_CHALLENGE_ID}
@@ -640,22 +640,29 @@ export default function App() {
                 const challengeDetails = challenges.find((c) => c.id === uc.challengeId);
                 if (!challengeDetails) return null;
                 return (
-                  <ChallengeCard
-                    key={uc.id}
-                    challenge={challengeDetails}
-                    userChallenge={uc}
-                    user={user}
-                    onStart={(currentDay) =>
-                      handleStartChallenge(
-                        challengeDetails,
-                        uc.id,
-                        currentDay,
-                        uc.challengeId,
-                        uc.teamId || null
-                      )
-                    }
-                    onViewLeaderboard={handleViewFinalLeaderboard}
-                  />
+                  <div key={uc.id} style={{ display: "flex", flexDirection: "column", marginBottom: "16px" }}>
+                    <ChallengeCard
+                      challenge={challengeDetails}
+                      userChallenge={uc}
+                      user={user}
+                      onStart={(currentDay) =>
+                        handleStartChallenge(
+                          challengeDetails,
+                          uc.id,
+                          currentDay,
+                          uc.challengeId,
+                          uc.teamId || null
+                        )
+                      }
+                      onViewLeaderboard={handleViewFinalLeaderboard}
+                    />
+                    <ChallengeReminder
+                      userId={user.uid}
+                      challengeId={uc.challengeId}
+                      challengeName={uc.challengeName}
+                      challengeActive={uc.isActive !== false}
+                    />
+                  </div>
                 );
               })
             )}
