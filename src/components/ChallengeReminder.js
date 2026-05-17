@@ -11,7 +11,7 @@ import {
 
 const TIME_OPTIONS = getTimeOptions();
 
-export default function ChallengeReminder({ userId, challengeId, challengeName }) {
+export default function ChallengeReminder({ userId, challengeId, challengeName, challengeActive = true }) {
   const [expanded, setExpanded] = useState(false);
 
   // slot 1 state
@@ -246,6 +246,31 @@ export default function ChallengeReminder({ userId, challengeId, challengeName }
       </div>
     );
   };
+
+  // ── Challenge ended state ────────────────────────────────────────────────
+  if (!challengeActive) {
+    return (
+      <div style={{ marginTop: '16px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 14px',
+            backgroundColor: '#f5f5f5',
+            border: '1px solid #e0e0e0',
+            borderRadius: '8px',
+            color: '#999',
+            fontSize: '13px',
+          }}
+        >
+          <span>🔔</span>
+          <span>Challenge has ended — reminders stopped</span>
+        </div>
+      </div>
+    );
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ marginTop: '16px' }}>

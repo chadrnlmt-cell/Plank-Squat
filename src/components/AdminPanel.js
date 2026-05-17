@@ -305,6 +305,27 @@ export default function AdminPanel({ user }) {
     }
   };
 
+  // Batch-disable all challengeReminders for a given challengeId
+  const disableAllRemindersForChallenge = async (challengeId) => {
+    try {
+      const remindersQuery = query(
+        collection(db, "challengeReminders"),
+        where("challengeId", "==", challengeId)
+      );
+      const remindersSnap = await getDocs(remindersQuery);
+      if (remindersSnap.empty) return;
+      const reminderBatch = writeBatch(db);
+      remindersSnap.forEach((docSnap) => {
+        reminderBatch.update(docSnap.ref, { enabled: false });
+      });
+      await reminderBatch.commit();
+      console.log(`Disabled ${remindersSnap.size} reminder(s) for challenge ${challengeId}`);
+    } catch (error) {
+      // Non-blocking — log but don't halt deactivation
+      console.error("Error disabling reminders:", error);
+    }
+  };
+
   const handleDeactivate = (challenge) => {
     setConfirmAction({
       type: "deactivate",
@@ -321,6 +342,8 @@ export default function AdminPanel({ user }) {
         await finalizeAllStreaksOnChallengeEnd(challengeId);
         const archiveSuccess = await archiveLeaderboardBeforeDeactivate(challenge);
         if (!archiveSuccess) return;
+        // Silently disable all reminders for this challenge
+        await disableAllRemindersForChallenge(challengeId);
       }
 
       await updateDoc(doc(db, "challenges", challengeId), {
@@ -406,6 +429,8 @@ export default function AdminPanel({ user }) {
       // Finalize badges before archiving
       await finalizeAllStreaksOnChallengeEnd(challengeId);
       await archiveLeaderboardBeforeDeactivate(challenge);
+      // Silently disable all reminders for this challenge
+      await disableAllRemindersForChallenge(challengeId);
 
       await updateDoc(doc(db, "challenges", challengeId), {
         isActive: false,
@@ -740,7 +765,7 @@ export default function AdminPanel({ user }) {
                   </div>
                   <div>
                     <label style={{ display: "block", fontWeight: "bold", marginBottom: "5px" }}>Increment Per Day</label>
-                    <input type="number" value={editingChallenge.incrementPerDay} onChange={(e) => setEditingChallenge({ ...editingChallenge, incrementPerDay: parseInt(e.target.value, 10) })} min="0" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
+                    <input type="number" value={editingChallenge.numberOfDays} onChange={(e) => setEditingChallenge({ ...editingChallenge, incrementPerDay: parseInt(e.target.value, 10) })} min="0" style={{ width: "100%", padding: "10px", borderRadius: "5px", border: "1px solid #ddd" }} />
                   </div>
                   <div>
                     <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
