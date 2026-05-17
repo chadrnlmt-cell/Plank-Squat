@@ -103,17 +103,20 @@ export const saveReminder = async (userId, challengeId, slot, settings) => {
   try {
     const reminderId = `${userId}_${challengeId}_${slot}`;
     const reminderRef = doc(db, 'challengeReminders', reminderId);
-    await setDoc(reminderRef, {
+    const data = {
       userId,
       challengeId,
       slot,
       enabled: settings.enabled,
       time: settings.time,
       timeZone: settings.timeZone,
-      fcmToken: settings.fcmToken,
       lastSentDate: null,
       updatedAt: Timestamp.now(),
-    }, { merge: true });
+    };
+    // Only update fcmToken if one was provided
+    if (settings.fcmToken) data.fcmToken = settings.fcmToken;
+
+    await setDoc(reminderRef, data, { merge: true });
     return { success: true };
   } catch (err) {
     console.error('saveReminder error:', err);

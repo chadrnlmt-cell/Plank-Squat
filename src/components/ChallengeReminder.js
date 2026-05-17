@@ -141,21 +141,35 @@ export default function ChallengeReminder({ userId, challengeId, challengeName, 
     const setTime = slot === 1 ? setSlot1Time : setSlot2Time;
     const enabled = slot === 1 ? slot1Enabled : slot2Enabled;
     const setStatus = slot === 1 ? setSlot1Status : setSlot2Status;
-    setTime(newTime);
+    const setSaving = slot === 1 ? setSlot1Saving : setSlot2Saving;
 
-    // If already enabled, silently save the updated time and refresh token
+    setTime(newTime); // update UI immediately
+
     if (enabled) {
-      const result = await requestNotificationPermission();
-      const token = result.success ? result.token : null;
-      if (token) {
-        await saveReminder(userId, challengeId, slot, {
+      setSaving(true);
+      try {
+        // Try to get a fresh token, but don't block the save if it fails
+        let token = null;
+        try {
+          const result = await requestNotificationPermission();
+          if (result.success) token = result.token;
+        } catch (_) {}
+
+        // Always save the new time — token is optional (uses merge)
+        const saveData = {
           enabled: true,
           time: newTime,
           timeZone: getUserTimeZone(),
-          fcmToken: token,
-        });
+        };
+        if (token) saveData.fcmToken = token;
+
+        await saveReminder(userId, challengeId, slot, saveData);
         setStatus('saved');
         setTimeout(() => setStatus(''), 2000);
+      } catch (err) {
+        setStatus('error');
+      } finally {
+        setSaving(false);
       }
     }
   };
