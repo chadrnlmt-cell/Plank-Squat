@@ -90,7 +90,11 @@ export default function PracticeCard({
   const hasBadges = streakPills.length > 0 || multiplierPills.length > 0;
 
   return (
-    <>
+    // Outer wrapper — same pattern as challenge cards in App.js
+    // The card itself + the ChallengeReminder sit in a column, just like
+    // activeChallenges render their card div then <ChallengeReminder> below it.
+    <div style={{ display: "flex", flexDirection: "column" }}>
+
       {showLeaveConfirm && (
         <div
           style={{
@@ -142,6 +146,7 @@ export default function PracticeCard({
         </div>
       )}
 
+      {/* The green practice card — identical structure to a challenge card */}
       <div
         className="card"
         style={{
@@ -258,13 +263,6 @@ export default function PracticeCard({
             🏋️ Start Practice Session
           </button>
 
-          {/* Reminder section — same position and behavior as inside a challenge card */}
-          <ChallengeReminder
-            userId={userId}
-            challengeId={PRACTICE_CHALLENGE_ID}
-            challengeName="Practice Session"
-          />
-
           <div style={{ textAlign: "center", marginTop: "10px" }}>
             <button
               onClick={() => setShowLeaveConfirm(true)}
@@ -279,6 +277,15 @@ export default function PracticeCard({
           </div>
         </div>
       </div>
-    </>
+
+      {/* ChallengeReminder sits OUTSIDE the card body, just like on challenge cards.
+          This makes the practice experience seamless and identical to a real challenge. */}
+      <ChallengeReminder
+        userId={userId}
+        challengeId={PRACTICE_CHALLENGE_ID}
+        challengeName="Practice Session"
+      />
+
+    </div>
   );
 }
