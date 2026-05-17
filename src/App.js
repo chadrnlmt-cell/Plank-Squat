@@ -1145,12 +1145,20 @@ export default function App() {
                   }}
                 >
                   {practiceJoined && (
-                    <PracticeCard
-                      key={`practice-${practiceReloadKey}`}
-                      userId={user.uid}
-                      onStartPractice={handleStartPractice}
-                      onLeft={handlePracticeLeft}
-                    />
+                    <>
+                      <PracticeCard
+                        key={`practice-${practiceReloadKey}`}
+                        userId={user.uid}
+                        onStartPractice={handleStartPractice}
+                        onLeft={handlePracticeLeft}
+                      />
+                      {/* Reminder section — identical behavior to regular challenges */}
+                      <ChallengeReminder
+                        userId={user.uid}
+                        challengeId={PRACTICE_CHALLENGE_ID}
+                        challengeName="Practice Session"
+                      />
+                    </>
                   )}
                   {activeChallenges.map((userChallenge) => {
                     const canStart = canStartToday(userChallenge);
