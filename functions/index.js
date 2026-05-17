@@ -19,7 +19,10 @@ const MOTIVATIONAL_MESSAGES = [
 const getRandomMessage = () =>
   MOTIVATIONAL_MESSAGES[Math.floor(Math.random() * MOTIVATIONAL_MESSAGES.length)];
 
-const getMinutesSinceMidnight = (timeZone) => {
+// Snap actual current time to the nearest :00 or :30 in the user's timezone.
+// Cloud Scheduler can drift by up to ~18 minutes — snapping means a 1:00 PM
+// reminder always matches the 1:00 run, never the 1:18 drift.
+const getSnappedMinutesSinceMidnight = (timeZone) => {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone,
@@ -29,7 +32,10 @@ const getMinutesSinceMidnight = (timeZone) => {
     }).formatToParts(new Date());
     const h = parseInt(parts.find((p) => p.type === "hour").value, 10);
     const m = parseInt(parts.find((p) => p.type === "minute").value, 10);
-    return h * 60 + m;
+    // Snap minute to nearest 0 or 30
+    const snappedM = m < 15 ? 0 : m < 45 ? 30 : 0;
+    const snappedH = m >= 45 ? (h + 1) % 24 : h;
+    return snappedH * 60 + snappedM;
   } catch {
     return null;
   }
@@ -40,7 +46,6 @@ const parseTimeToMinutes = (timeStr) => {
   return h * 60 + m;
 };
 
-// Get today's date string (YYYY-MM-DD) in the user's own timezone.
 const getTodayInTimeZone = (timeZone) => {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
@@ -58,9 +63,9 @@ const getTodayInTimeZone = (timeZone) => {
   }
 };
 
-// Pinned to exactly :00 and :30 every hour via cron.
-// The match window is 28 minutes (not 35) so a reminder set for 10:30
-// can only be caught by the :30 run, never double-fired by the :00 run.
+// Fires at exactly :00 and :30 UTC every hour.
+// We snap the user's local time to nearest :00/:30 before comparing,
+// so scheduler drift never affects when the user receives the notification.
 exports.sendChallengeReminders = onSchedule("0,30 * * * *", async () => {
   const db = getFirestore();
   const messaging = getMessaging();
@@ -86,17 +91,17 @@ exports.sendChallengeReminders = onSchedule("0,30 * * * *", async () => {
     const today = getTodayInTimeZone(timeZone);
     if (lastSentDate === today) return;
 
-    const currentMinutes = getMinutesSinceMidnight(timeZone);
-    if (currentMinutes === null) return;
+    // Use snapped time — ignores scheduler drift completely
+    const snappedMinutes = getSnappedMinutesSinceMidnight(timeZone);
+    if (snappedMinutes === null) return;
 
     const reminderMinutes = parseTimeToMinutes(time);
-    const diff = currentMinutes - reminderMinutes;
 
-    // Window: 0-28 minutes after the set time.
-    // 28 min keeps each run from overlapping the next :30 slot.
-    if (diff < 0 || diff >= 28) return;
+    // Exact match only — snapped time must equal the set reminder time
+    if (snappedMinutes !== reminderMinutes) return;
 
     const message = getRandomMessage();
+    console.log(`🕐 Snapped time ${snappedMinutes} matches reminder ${reminderMinutes} for ${data.userId}`);
 
     sends.push(
       messaging
