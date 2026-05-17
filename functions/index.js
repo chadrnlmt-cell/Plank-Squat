@@ -40,9 +40,7 @@ const parseTimeToMinutes = (timeStr) => {
   return h * 60 + m;
 };
 
-// FIX: Get today's date string (YYYY-MM-DD) in the user's own timezone.
-// Previously used UTC which caused evening reminders (7-8 PM Phoenix) to get
-// the wrong date — UTC is already the next day at that hour.
+// Get today's date string (YYYY-MM-DD) in the user's own timezone.
 const getTodayInTimeZone = (timeZone) => {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
@@ -60,7 +58,10 @@ const getTodayInTimeZone = (timeZone) => {
   }
 };
 
-exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
+// Pinned to exactly :00 and :30 every hour via cron.
+// The match window is 28 minutes (not 35) so a reminder set for 10:30
+// can only be caught by the :30 run, never double-fired by the :00 run.
+exports.sendChallengeReminders = onSchedule("0,30 * * * *", async () => {
   const db = getFirestore();
   const messaging = getMessaging();
 
@@ -82,9 +83,7 @@ exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
 
     if (!fcmToken || !time || !timeZone) return;
 
-    // FIX: Use user's timezone for today's date, not UTC
     const today = getTodayInTimeZone(timeZone);
-
     if (lastSentDate === today) return;
 
     const currentMinutes = getMinutesSinceMidnight(timeZone);
@@ -92,7 +91,10 @@ exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
 
     const reminderMinutes = parseTimeToMinutes(time);
     const diff = currentMinutes - reminderMinutes;
-    if (diff < 0 || diff >= 35) return;
+
+    // Window: 0-28 minutes after the set time.
+    // 28 min keeps each run from overlapping the next :30 slot.
+    if (diff < 0 || diff >= 28) return;
 
     const message = getRandomMessage();
 
