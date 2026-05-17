@@ -1,8 +1,9 @@
 // src/components/PracticeCard.js
+// Renders the active Practice card — shown on the Active tab after the user
+// has joined. ChallengeReminder is rendered by App.js (outside this card),
+// exactly like real challenge cards.
 import React, { useState, useEffect } from "react";
 import { getPracticeStats, leavePractice } from "../practiceHelpers";
-import ChallengeReminder from "./ChallengeReminder";
-import { PRACTICE_CHALLENGE_ID } from "../practiceConstants";
 
 function formatSeconds(sec) {
   const s = Number(sec) || 0;
@@ -90,11 +91,7 @@ export default function PracticeCard({
   const hasBadges = streakPills.length > 0 || multiplierPills.length > 0;
 
   return (
-    // Outer wrapper — same pattern as challenge cards in App.js
-    // The card itself + the ChallengeReminder sit in a column, just like
-    // activeChallenges render their card div then <ChallengeReminder> below it.
-    <div style={{ display: "flex", flexDirection: "column" }}>
-
+    <>
       {showLeaveConfirm && (
         <div
           style={{
@@ -116,7 +113,8 @@ export default function PracticeCard({
             <div style={{ fontSize: "40px", marginBottom: "12px" }}>🏋️</div>
             <h3 style={{ margin: "0 0 10px 0", color: "var(--color-text)" }}>Leave Practice Session?</h3>
             <p style={{ fontSize: "14px", color: "var(--color-text-secondary)", margin: "0 0 20px 0", lineHeight: 1.5 }}>
-              You can always come back — your badges, streaks, and session history are saved and will be here when you return.
+              Your badges, streaks, and session history are saved. Any reminders will be turned off automatically.
+              You can rejoin anytime from the Available tab.
             </p>
             <div style={{ display: "flex", gap: "10px" }}>
               <button
@@ -146,7 +144,7 @@ export default function PracticeCard({
         </div>
       )}
 
-      {/* The green practice card — identical structure to a challenge card */}
+      {/* Green practice card — identical structure to a challenge card */}
       <div
         className="card"
         style={{
@@ -277,15 +275,6 @@ export default function PracticeCard({
           </div>
         </div>
       </div>
-
-      {/* ChallengeReminder sits OUTSIDE the card body, just like on challenge cards.
-          This makes the practice experience seamless and identical to a real challenge. */}
-      <ChallengeReminder
-        userId={userId}
-        challengeId={PRACTICE_CHALLENGE_ID}
-        challengeName="Practice Session"
-      />
-
-    </div>
+    </>
   );
 }

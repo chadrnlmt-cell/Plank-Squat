@@ -35,7 +35,9 @@ import PracticeCard from "./components/PracticeCard";
 import Banner from "./components/Banner";
 import InstallPrompt from "./components/InstallPrompt";
 import ChallengeEndSummaryModal from "./components/ChallengeEndSummaryModal";
+import ChallengeReminder from "./components/ChallengeReminder";
 import { PRACTICE_CHALLENGE_ID, PRACTICE_TARGET_SECONDS } from "./practiceConstants";
+import { isJoinedPractice, joinPractice } from "./practiceHelpers";
 import { initForegroundNotifications } from "./notificationHelpers";
 
 export default function App() {
@@ -50,15 +52,14 @@ export default function App() {
   const [profileName, setProfileName] = useState("");
   const [newBadges, setNewBadges] = useState([]);
   const [practiceReloadKey, setPracticeReloadKey] = useState(0);
-  // targetLeaderboardChallengeId: when set, Leaderboard auto-jumps to that archived challenge
+  const [isPracticeJoined, setIsPracticeJoined] = useState(false);
+  const [practiceJoining, setPracticeJoining] = useState(false);
   const [targetLeaderboardChallengeId, setTargetLeaderboardChallengeId] = useState(null);
-  // Challenge-end summary modal
-  const [summaryModal, setSummaryModal] = useState(null); // null | { challengeId, challengeName, challengeType, userId }
+  const [summaryModal, setSummaryModal] = useState(null);
 
   const auth = getAuth();
 
-  // FIX: Initialize foreground notification handler once on mount.
-  // Without this, push notifications received while the app is open are silently dropped.
+  // Initialize foreground notification handler once on mount
   useEffect(() => {
     initForegroundNotifications();
   }, []);
@@ -69,33 +70,27 @@ export default function App() {
       setUser(firebaseUser);
       setAuthLoading(false);
       if (firebaseUser) {
-        // Ensure user profile doc exists
         const userRef = doc(db, "users", firebaseUser.uid);
         const snap = await getDoc(userRef);
         if (!snap.exists()) {
           await updateDoc(userRef, {}).catch(() => {});
         }
         loadUserChallenges(firebaseUser);
+        // Check practice join status
+        const joined = await isJoinedPractice(firebaseUser.uid);
+        setIsPracticeJoined(joined);
       } else {
         setUserChallenges([]);
+        setIsPracticeJoined(false);
       }
     });
     return unsub;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Auto-open active challenge on tab focus ───────────────────────────────
   useEffect(() => {
     if (!user || activeTab !== "active") return;
-    const todayReady = userChallenges.find(
-      (uc) => uc.status === "active" && !uc.todayComplete && uc.currentDay <= (uc.numberOfDays || 30)
-    );
-    if (todayReady && !activeChallengeData) {
-      // Don't auto-launch; just ensure data is fresh
-    }
   }, [user, userChallenges, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear the leaderboard deep-link target whenever user manually switches tabs
-  // (but NOT when we programmatically navigate to leaderboards)
   const handleTabChange = (tab) => {
     if (tab !== "leaderboards") {
       setTargetLeaderboardChallengeId(null);
@@ -111,7 +106,6 @@ export default function App() {
       if (!challengeSnap.exists()) throw new Error("Challenge not found");
       const challengeData = challengeSnap.data();
 
-      // Build leaderboard snapshot
       const statsQuery = query(
         collection(db, "challengeUserStats"),
         where("challengeId", "==", challengeId)
@@ -130,7 +124,6 @@ export default function App() {
         teamId: d.data().teamId || null,
       }));
 
-      // Calculate team standings if this is a team challenge
       let teamStandings = [];
       if (challengeData.isTeamChallenge) {
         const teamsSnap = await getDocs(collection(db, "teams"));
@@ -207,7 +200,6 @@ export default function App() {
       const snap = await getDocs(q);
       const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      // Enrich with challenge details
       const enriched = await Promise.all(
         data.map(async (uc) => {
           const cSnap = await getDoc(doc(db, "challenges", uc.challengeId));
@@ -266,6 +258,21 @@ export default function App() {
     }
   };
 
+  // ── Join Practice ─────────────────────────────────────────────────────────
+  const handleJoinPractice = async () => {
+    if (!user) return;
+    setPracticeJoining(true);
+    try {
+      await joinPractice(user.uid, profileName || user.displayName || "");
+      setIsPracticeJoined(true);
+      setActiveTab("active");
+    } catch (err) {
+      console.error("handleJoinPractice error:", err);
+    } finally {
+      setPracticeJoining(false);
+    }
+  };
+
   // ── Challenge actions ─────────────────────────────────────────────────────
   const handleStartChallenge = (challengeDetails, userChallengeId, currentDay, challengeId, teamId) => {
     setActiveChallengeData({ challengeDetails, userChallengeId, currentDay, challengeId, teamId, isPractice: false });
@@ -295,7 +302,6 @@ export default function App() {
       setShowRedoMessage(true);
     }
     await loadUserChallenges();
-    // After a fresh completion (not a redo), take user straight to leaderboard
     if (!isRedo) setActiveTab("leaderboards");
   };
 
@@ -309,12 +315,12 @@ export default function App() {
     setAttemptNumber((prev) => prev + 1);
   };
 
-  // Navigate to leaderboard and deep-link to a specific archived challenge
   const handleViewFinalLeaderboard = (challengeId) => {
     setTargetLeaderboardChallengeId(challengeId);
     setActiveTab("leaderboards");
   };
 
+  // ── Active challenge / practice timer screens ─────────────────────────────
   if (activeChallengeData) {
     const {
       challengeDetails,
@@ -446,7 +452,6 @@ export default function App() {
     (uc) => uc.status === "completed" || uc.isActive === false
   );
 
-  // Get challenges user hasn't joined yet
   const joinedChallengeIds = userChallenges.map((uc) => uc.challengeId);
   const availableChallenges = challenges.filter(
     (c) => c.isActive !== false && !joinedChallengeIds.includes(c.id)
@@ -457,7 +462,6 @@ export default function App() {
       <Banner />
       <InstallPrompt />
 
-      {/* Badge celebration overlay */}
       {newBadges.length > 0 && (
         <BadgeCelebration
           badges={newBadges}
@@ -465,7 +469,6 @@ export default function App() {
         />
       )}
 
-      {/* Challenge end summary modal */}
       {summaryModal && (
         <ChallengeEndSummaryModal
           challengeId={summaryModal.challengeId}
@@ -503,17 +506,48 @@ export default function App() {
           </button>
         </div>
 
-        {/* Available Challenges Tab */}
+        {/* ── Available Tab ── */}
         {activeTab === "available" && (
           <div>
-            {/* Practice card always shown */}
-            <PracticeCard
-              key={practiceReloadKey}
-              user={user}
-              onStartPractice={handleStartPractice}
-            />
+            {/* Practice join card — shown only when NOT joined, just like any other challenge */}
+            {!isPracticeJoined && (
+              <div
+                className="card"
+                style={{
+                  border: "2px solid #10b981",
+                  background: "linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)",
+                  marginBottom: "16px",
+                }}
+              >
+                <div className="card__body">
+                  <h3 style={{ margin: "0 0 6px 0", fontSize: "18px", color: "#065f46" }}>
+                    🏋️ Practice Session
+                  </h3>
+                  <p style={{ margin: "0 0 4px 0", fontSize: "13px", color: "#047857" }}>
+                    Always available · 60s plank · No end date
+                  </p>
+                  <p style={{ margin: "0 0 16px 0", fontSize: "13px", color: "#6b7280", lineHeight: 1.5 }}>
+                    Build your streak and earn badges at your own pace. Opt out anytime.
+                  </p>
+                  <button
+                    className="btn btn--primary"
+                    onClick={handleJoinPractice}
+                    disabled={practiceJoining}
+                    style={{
+                      width: "100%", fontSize: "15px", fontWeight: "bold",
+                      backgroundColor: "#10b981", borderColor: "#10b981",
+                      padding: "13px",
+                      opacity: practiceJoining ? 0.7 : 1,
+                      cursor: practiceJoining ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {practiceJoining ? "Joining..." : "Join Practice Session"}
+                  </button>
+                </div>
+              </div>
+            )}
 
-            {availableChallenges.length === 0 ? (
+            {availableChallenges.length === 0 && isPracticeJoined ? (
               <div style={{
                 backgroundColor: "#fff", borderRadius: "12px",
                 padding: "32px", textAlign: "center",
@@ -525,7 +559,7 @@ export default function App() {
                   You've joined all active challenges. Check back soon for new ones!
                 </p>
               </div>
-            ) : (
+            ) : availableChallenges.length === 0 && !isPracticeJoined ? null : (
               availableChallenges.map((challenge) => (
                 <ChallengeCard
                   key={challenge.id}
@@ -542,7 +576,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Active Challenges Tab */}
+        {/* ── Active Tab ── */}
         {activeTab === "active" && (
           <div>
             {showRedoMessage && (
@@ -555,7 +589,30 @@ export default function App() {
               </div>
             )}
 
-            {activeChallenges.length === 0 ? (
+            {/* Practice card — shown on Active tab when joined, same as real challenges */}
+            {isPracticeJoined && (
+              <div style={{ display: "flex", flexDirection: "column", marginBottom: "16px" }}>
+                <PracticeCard
+                  key={practiceReloadKey}
+                  userId={user.uid}
+                  onStartPractice={handleStartPractice}
+                  onLeft={() => {
+                    setIsPracticeJoined(false);
+                    // If no other active challenges, drop back to Available tab
+                    if (activeChallenges.length === 0) setActiveTab("available");
+                  }}
+                />
+                {/* ChallengeReminder lives outside PracticeCard, exactly like real challenge cards */}
+                <ChallengeReminder
+                  userId={user.uid}
+                  challengeId={PRACTICE_CHALLENGE_ID}
+                  challengeName="Practice Session"
+                  challengeActive={true}
+                />
+              </div>
+            )}
+
+            {activeChallenges.length === 0 && !isPracticeJoined ? (
               <div style={{
                 backgroundColor: "#fff", borderRadius: "12px",
                 padding: "32px", textAlign: "center",

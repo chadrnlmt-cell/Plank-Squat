@@ -16,6 +16,9 @@ import {
   updateDoc,
   addDoc,
   collection,
+  getDocs,
+  query,
+  where,
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
@@ -54,11 +57,10 @@ function defaultStats(userId, displayName) {
     avgSeconds: 0,
     currentStreak: 0,
     bestStreak: 0,
-    lastSessionDate: null, // Phoenix YYYY-MM-DD string
-    lastSessionAt: null,   // Firestore Timestamp
+    lastSessionDate: null,
+    lastSessionAt: null,
     joinedAt: null,
     leftAt: null,
-    // Badges (mirror challenge badge shape so PracticeCard can show them)
     completedStreakBadges: { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
     currentStreakBadgeLevel: 0,
     doubleBadgeCount: 0,
@@ -125,15 +127,36 @@ export async function joinPractice(userId, displayName) {
   }
 }
 
+// leavePractice — sets joined:false AND disables both reminder slots so
+// push notifications stop immediately (mirrors challenge-end behaviour).
 export async function leavePractice(userId) {
   if (!userId) return;
-  const ref = doc(db, "practiceUserStats", userId);
-  const snap = await getDoc(ref);
+
+  // 1. Mark user as left
+  const statsRef = doc(db, "practiceUserStats", userId);
+  const snap = await getDoc(statsRef);
   if (!snap.exists()) return;
-  await updateDoc(ref, {
+  await updateDoc(statsRef, {
     joined: false,
     leftAt: serverTimestamp(),
   });
+
+  // 2. Disable all reminder slots for the practice challenge
+  try {
+    const remindersQuery = query(
+      collection(db, "challengeReminders"),
+      where("userId", "==", userId),
+      where("challengeId", "==", PRACTICE_CHALLENGE_ID)
+    );
+    const remindersSnap = await getDocs(remindersQuery);
+    const disablePromises = remindersSnap.docs.map((d) =>
+      updateDoc(d.ref, { enabled: false })
+    );
+    await Promise.all(disablePromises);
+  } catch (err) {
+    console.error("leavePractice: error disabling reminders:", err);
+    // Non-fatal — user is still marked as left
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -158,7 +181,6 @@ export async function logPracticeSession({
   const todayKey = phoenixDayKey();
   const nowTs = Timestamp.fromDate(getPhoenixDate());
 
-  // Always write the attempt (every session counts toward totals/badges)
   await addDoc(collection(db, "practiceAttempts"), {
     userId,
     displayName: displayName || existing.displayName || null,
@@ -170,14 +192,12 @@ export async function logPracticeSession({
     timestamp: nowTs,
   });
 
-  // ── Aggregate updates ────────────────────────────────────────────────────
   const newTotalSessions = (existing.totalSessions || 0) + 1;
   const newTotalSeconds = (existing.totalSeconds || 0) + (actualSeconds || 0);
   const newBestSeconds = Math.max(existing.bestSeconds || 0, actualSeconds || 0);
   const newAvgSeconds =
     newTotalSessions > 0 ? Math.round(newTotalSeconds / newTotalSessions) : 0;
 
-  // ── Streak logic (calendar-day, Phoenix) ─────────────────────────────────
   let newCurrentStreak = existing.currentStreak || 0;
   let newBestStreak = existing.bestStreak || 0;
   let newLastSessionDate = existing.lastSessionDate || null;
@@ -192,11 +212,9 @@ export async function logPracticeSession({
     if (newCurrentStreak > newBestStreak) newBestStreak = newCurrentStreak;
   }
 
-  // ── Streak badge level ───────────────────────────────────────────────────
   const { level: newStreakBadgeLevel, newlyEarned: newlyEarnedStreakBadge } =
     calcStreakBadgeLevel(newCurrentStreak, existing.currentStreakBadgeLevel || 0);
 
-  // ── Multiplier badges (every successful session, based on actual/target) ─
   let newDouble = existing.doubleBadgeCount || 0;
   let newTriple = existing.tripleBadgeCount || 0;
   let newQuad = existing.quadrupleBadgeCount || 0;
