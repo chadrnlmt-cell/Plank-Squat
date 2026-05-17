@@ -42,7 +42,7 @@ const parseTimeToMinutes = (timeStr) => {
   return h * 60 + m;
 };
 
-// Runs every 30 minutes — checks challengeReminders for any that fall within the current 30-min window
+// Runs every 30 minutes — checks challengeReminders for any that fall within the current window
 exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
   const db = getFirestore();
   const messaging = getMessaging();
@@ -75,9 +75,10 @@ exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
 
     const reminderMinutes = parseTimeToMinutes(time);
 
-    // Fire if the reminder time falls within the past 30-minute window
+    // FIX: Widened window to 35 minutes to account for Cloud Scheduler drift/cold starts.
+    // Previously 30 min window meant if function ran at :31 for a :00 reminder, it was missed.
     const diff = currentMinutes - reminderMinutes;
-    if (diff < 0 || diff >= 30) return;
+    if (diff < 0 || diff >= 35) return;
 
     const message = getRandomMessage();
 
@@ -91,8 +92,9 @@ exports.sendChallengeReminders = onSchedule("every 30 minutes", async () => {
           },
           webpush: {
             notification: {
-              icon: "/icons/icon-192.png",
-              badge: "/icons/icon-192.png",
+              // FIX: corrected icon path to match actual file in public root
+              icon: "/icon-192.svg",
+              badge: "/icon-192.svg",
               vibrate: [200, 100, 200],
             },
             fcm_options: {

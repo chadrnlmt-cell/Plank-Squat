@@ -36,6 +36,7 @@ import Banner from "./components/Banner";
 import InstallPrompt from "./components/InstallPrompt";
 import ChallengeEndSummaryModal from "./components/ChallengeEndSummaryModal";
 import { PRACTICE_CHALLENGE_ID, PRACTICE_TARGET_SECONDS } from "./practiceConstants";
+import { initForegroundNotifications } from "./notificationHelpers";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -55,6 +56,12 @@ export default function App() {
   const [summaryModal, setSummaryModal] = useState(null); // null | { challengeId, challengeName, challengeType, userId }
 
   const auth = getAuth();
+
+  // FIX: Initialize foreground notification handler once on mount.
+  // Without this, push notifications received while the app is open are silently dropped.
+  useEffect(() => {
+    initForegroundNotifications();
+  }, []);
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -97,9 +104,6 @@ export default function App() {
   };
 
   // ── Archive leaderboard before deactivating ───────────────────────────────
-  // This function is called from AdminPanel via a prop. It acquires a
-  // lock field to prevent race conditions, archives the leaderboard to
-  // leaderboardHistory, then flips isActive to false.
   const archiveLeaderboardBeforeDeactivate = async (challengeId) => {
     try {
       const challengeRef = doc(db, "challenges", challengeId);

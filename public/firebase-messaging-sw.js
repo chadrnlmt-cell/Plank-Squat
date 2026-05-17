@@ -19,6 +19,7 @@ messaging.onBackgroundMessage((payload) => {
   const { title, body } = payload.notification || {};
   self.registration.showNotification(title || 'Plank & Squat Challenge', {
     body: body || "Time to crush today's challenge! 💪",
+    // FIX: corrected icon path — /icon-192.svg exists in public root (was /icons/icon-192.png)
     icon: '/icon-192.svg',
     badge: '/icon-192.svg',
     data: payload.data || {},

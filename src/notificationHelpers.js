@@ -1,6 +1,6 @@
 // src/notificationHelpers.js
 import { messaging } from './firebase';
-import { getToken } from 'firebase/messaging';
+import { getToken, onMessage } from 'firebase/messaging';
 import { db } from './firebase';
 import {
   doc,
@@ -60,6 +60,27 @@ export const requestNotificationPermission = async () => {
   }
 };
 
+// FIX: foreground notification handler — shows notification when app is open.
+// Call this once when the app loads (e.g. in App.js useEffect).
+// Without this, notifications sent while app is open are silently ignored.
+export const initForegroundNotifications = () => {
+  try {
+    onMessage(messaging, (payload) => {
+      const title = payload?.notification?.title || 'Plank & Squat Challenge 💪';
+      const body = payload?.notification?.body || getRandomMessage();
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, {
+          body,
+          icon: '/icon-192.svg',
+          badge: '/icon-192.svg',
+        });
+      }
+    });
+  } catch (err) {
+    console.error('initForegroundNotifications error:', err);
+  }
+};
+
 // Save reminder settings to Firestore
 // reminderId format: userId_challengeId_slot (slot = 1 or 2)
 export const saveReminder = async (userId, challengeId, slot, settings) => {
@@ -74,6 +95,9 @@ export const saveReminder = async (userId, challengeId, slot, settings) => {
       time: settings.time,           // "07:30" 24-hour format
       timeZone: settings.timeZone,   // e.g. "America/Phoenix"
       fcmToken: settings.fcmToken,
+      // FIX: clear lastSentDate when saving/updating a reminder so the new time
+      // fires correctly today if applicable, instead of being blocked by a stale date.
+      lastSentDate: null,
       updatedAt: Timestamp.now(),
     }, { merge: true });
     return { success: true };
