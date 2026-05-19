@@ -58,7 +58,9 @@ export default function PracticeCard({
   const totalSessions = stats?.totalSessions || 0;
   const totalSeconds = stats?.totalSeconds || 0;
   const bestSeconds = stats?.bestSeconds || 0;
+  const avgSeconds = stats?.avgSeconds || 0;
   const currentStreak = stats?.currentStreak || 0;
+  const bestStreak = stats?.bestStreak || 0;
 
   const completedStreaks = stats?.completedStreakBadges || {};
   const currentStreakBadgeLevel = stats?.currentStreakBadgeLevel || 0;
@@ -89,6 +91,11 @@ export default function PracticeCard({
   ].filter(Boolean);
 
   const hasBadges = streakPills.length > 0 || multiplierPills.length > 0;
+
+  // Shared style for stat value text — slightly smaller to fit 4 columns comfortably
+  const statValueStyle = { fontSize: "17px", fontWeight: "bold", color: "#065f46" };
+  const statLabelStyle = { fontSize: "11px", color: "#047857" };
+  const dividerStyle = { width: "1px", background: "#a7f3d0", flexShrink: 0 };
 
   return (
     <>
@@ -185,25 +192,46 @@ export default function PracticeCard({
               {totalSessions > 0 && (
                 <div
                   style={{
-                    display: "flex", gap: "12px", marginBottom: "14px",
                     background: "rgba(16,185,129,0.08)",
                     borderRadius: "10px", padding: "10px 12px",
+                    marginBottom: "14px",
                   }}
                 >
-                  <div style={{ flex: 1, textAlign: "center" }}>
-                    <div style={{ fontSize: "20px", fontWeight: "bold", color: "#065f46" }}>{totalSessions}</div>
-                    <div style={{ fontSize: "11px", color: "#047857" }}>Sessions</div>
+                  {/* Row 1: Sessions | Total Time | Avg Time | Best */}
+                  <div style={{ display: "flex", gap: "8px", alignItems: "stretch" }}>
+                    <div style={{ flex: 1, textAlign: "center" }}>
+                      <div style={statValueStyle}>{totalSessions}</div>
+                      <div style={statLabelStyle}>Sessions</div>
+                    </div>
+                    <div style={dividerStyle} />
+                    <div style={{ flex: 1, textAlign: "center" }}>
+                      <div style={statValueStyle}>{formatSeconds(totalSeconds)}</div>
+                      <div style={statLabelStyle}>Total Time</div>
+                    </div>
+                    <div style={dividerStyle} />
+                    <div style={{ flex: 1, textAlign: "center" }}>
+                      <div style={statValueStyle}>{formatSeconds(avgSeconds)}</div>
+                      <div style={statLabelStyle}>Avg Time</div>
+                    </div>
+                    <div style={dividerStyle} />
+                    <div style={{ flex: 1, textAlign: "center" }}>
+                      <div style={statValueStyle}>{formatSeconds(bestSeconds)}</div>
+                      <div style={statLabelStyle}>Best</div>
+                    </div>
                   </div>
-                  <div style={{ width: "1px", background: "#a7f3d0" }} />
-                  <div style={{ flex: 1, textAlign: "center" }}>
-                    <div style={{ fontSize: "20px", fontWeight: "bold", color: "#065f46" }}>{formatSeconds(totalSeconds)}</div>
-                    <div style={{ fontSize: "11px", color: "#047857" }}>Total Time</div>
-                  </div>
-                  <div style={{ width: "1px", background: "#a7f3d0" }} />
-                  <div style={{ flex: 1, textAlign: "center" }}>
-                    <div style={{ fontSize: "20px", fontWeight: "bold", color: "#065f46" }}>{formatSeconds(bestSeconds)}</div>
-                    <div style={{ fontSize: "11px", color: "#047857" }}>Best</div>
-                  </div>
+
+                  {/* Row 2: Best Streak — only shown when bestStreak > 0 */}
+                  {bestStreak > 0 && (
+                    <>
+                      <div style={{ height: "1px", background: "#a7f3d0", margin: "8px 0" }} />
+                      <div style={{ textAlign: "center" }}>
+                        <div style={statValueStyle}>
+                          🔥 {bestStreak} {bestStreak === 1 ? "day" : "days"}
+                        </div>
+                        <div style={statLabelStyle}>Best Streak</div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
