@@ -125,7 +125,11 @@ async function calculateStreakContinuation(
 }
 
 /**
- * Calculate streak badge updates
+ * Calculate streak badge updates.
+ * FIX: completedBadges is now incremented immediately when a milestone
+ * is hit, not deferred to finalizeStreakBadge(). This ensures the count
+ * is accurate after every completion and supports earning multiple badges
+ * across separate streaks within the same challenge.
  */
 function calculateStreakBadges(currentStreak, currentBadgeLevel, existingCompletedBadges) {
   const milestones = [3, 7, 14, 21, 28];
@@ -137,6 +141,8 @@ function calculateStreakBadges(currentStreak, currentBadgeLevel, existingComplet
     if (currentStreak >= milestone && milestone > currentBadgeLevel) {
       newBadgeLevel = milestone;
       newlyEarnedBadge = milestone;
+      // FIX: credit the badge immediately when the streak hits the milestone
+      completedBadges[milestone] = (completedBadges[milestone] || 0) + 1;
     }
   }
 
@@ -144,7 +150,10 @@ function calculateStreakBadges(currentStreak, currentBadgeLevel, existingComplet
 }
 
 /**
- * When a streak breaks, save the highest badge from that streak
+ * When a streak breaks, save the highest badge from that streak.
+ * Note: with the fix in calculateStreakBadges, the badge is already
+ * counted at earn-time. finalizeStreakBadge is kept for challenge-end
+ * finalization in finalizeAllStreaksOnChallengeEnd only.
  */
 function finalizeStreakBadge(currentBadgeLevel, completedBadges) {
   if (currentBadgeLevel > 0) {
@@ -562,11 +571,9 @@ export async function finalizeAllStreaksOnChallengeEnd(challengeId, challengeTyp
         const updates = {};
 
         // ── Streak badge finalization ──
+        // Note: badge was already counted at earn-time via calculateStreakBadges fix.
+        // finalizeAllStreaksOnChallengeEnd resets the active level to 0 only.
         if (challengeBadges.currentStreakBadgeLevel > 0) {
-          const level = challengeBadges.currentStreakBadgeLevel;
-          const updated = { ...challengeBadges.completedStreakBadges };
-          updated[level] = (updated[level] || 0) + 1;
-          updates[`badges.challenges.${challengeId}.completedStreakBadges`] = updated;
           updates[`badges.challenges.${challengeId}.currentStreakBadgeLevel`] = 0;
         }
 
