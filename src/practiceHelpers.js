@@ -7,6 +7,9 @@
 // Practice has no leaderboards. Every session counts toward totals and
 // multiplier/total-time badges, but the calendar-day streak only advances
 // once per Phoenix calendar day.
+//
+// Multiple sessions per day are allowed — all seconds accumulate toward
+// totalPlankSeconds and time badges, but streak only advances once per day.
 
 import { db } from "./firebase";
 import {
@@ -53,6 +56,7 @@ function defaultStats(userId, displayName) {
     joined: false,
     totalSessions: 0,
     totalSeconds: 0,
+    totalPlankSeconds: 0,
     bestSeconds: 0,
     avgSeconds: 0,
     currentStreak: 0,
@@ -66,10 +70,16 @@ function defaultStats(userId, displayName) {
     doubleBadgeCount: 0,
     tripleBadgeCount: 0,
     quadrupleBadgeCount: 0,
+    currentTimeBadgeLevel: 0,
+    completedTimeBadges: {},
   };
 }
 
 const STREAK_MILESTONES = [3, 7, 14, 21, 28];
+
+// Time badge milestones: every 15 minutes (900s) up to 5 hours (18000s)
+const TIME_MILESTONES = [];
+for (let i = 900; i <= 18000; i += 900) TIME_MILESTONES.push(i);
 
 function calcStreakBadgeLevel(streak, currentLevel) {
   let level = currentLevel || 0;
@@ -81,6 +91,25 @@ function calcStreakBadgeLevel(streak, currentLevel) {
     }
   }
   return { level, newlyEarned };
+}
+
+function calcTimeBadgeLevel(totalSeconds, currentLevel, existingCompleted) {
+  let level = currentLevel || 0;
+  const completed = { ...existingCompleted };
+  let newlyEarned = null;
+
+  for (const milestone of TIME_MILESTONES) {
+    if (totalSeconds >= milestone && milestone > level) {
+      // Save the previous level as completed before advancing
+      if (level > 0) {
+        completed[level] = (completed[level] || 0) + 1;
+      }
+      level = milestone;
+      newlyEarned = milestone;
+    }
+  }
+
+  return { level, completed, newlyEarned };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -164,6 +193,7 @@ export async function leavePractice(userId) {
 //   actualSeconds — what they held
 //   success       — whether they hit/exceeded the 60s target
 // Streak only advances once per Phoenix calendar day.
+// All session seconds accumulate toward totalPlankSeconds and time badges.
 // Returns { newBadges, stats } so the caller can celebrate badges.
 // ───────────────────────────────────────────────────────────────────────────
 export async function logPracticeSession({
@@ -198,14 +228,31 @@ export async function logPracticeSession({
   const newAvgSeconds =
     newTotalSessions > 0 ? Math.round(newTotalSeconds / newTotalSessions) : 0;
 
+  // ── Streak logic — advances once per calendar day only ──
   let newCurrentStreak = existing.currentStreak || 0;
   let newBestStreak = existing.bestStreak || 0;
   let newLastSessionDate = existing.lastSessionDate || null;
 
+  // completedStreakBadges — work on a mutable copy
+  let completedStreakBadges = {
+    ...(existing.completedStreakBadges || { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 }),
+  };
+  let streakBadgeLevelToCarryIn = existing.currentStreakBadgeLevel || 0;
+
   if (existing.lastSessionDate !== todayKey) {
-    if (existing.lastSessionDate && existing.lastSessionDate === previousDayKey(todayKey)) {
+    const streakContinues =
+      existing.lastSessionDate &&
+      existing.lastSessionDate === previousDayKey(todayKey);
+
+    if (streakContinues) {
       newCurrentStreak = (existing.currentStreak || 0) + 1;
     } else {
+      // FIX 2: streak broke — finalize any in-progress badge before resetting
+      if (streakBadgeLevelToCarryIn > 0) {
+        completedStreakBadges[streakBadgeLevelToCarryIn] =
+          (completedStreakBadges[streakBadgeLevelToCarryIn] || 0) + 1;
+        streakBadgeLevelToCarryIn = 0;
+      }
       newCurrentStreak = 1;
     }
     newLastSessionDate = todayKey;
@@ -213,8 +260,15 @@ export async function logPracticeSession({
   }
 
   const { level: newStreakBadgeLevel, newlyEarned: newlyEarnedStreakBadge } =
-    calcStreakBadgeLevel(newCurrentStreak, existing.currentStreakBadgeLevel || 0);
+    calcStreakBadgeLevel(newCurrentStreak, streakBadgeLevelToCarryIn);
 
+  // FIX 1: increment completedStreakBadges the moment a milestone is hit
+  if (newlyEarnedStreakBadge) {
+    completedStreakBadges[newlyEarnedStreakBadge] =
+      (completedStreakBadges[newlyEarnedStreakBadge] || 0) + 1;
+  }
+
+  // ── Multiplier badges ──
   let newDouble = existing.doubleBadgeCount || 0;
   let newTriple = existing.tripleBadgeCount || 0;
   let newQuad = existing.quadrupleBadgeCount || 0;
@@ -234,12 +288,26 @@ export async function logPracticeSession({
     }
   }
 
+  // FIX 3: time accumulation badges — all sessions per day accumulate
+  const newTotalPlankSeconds =
+    (existing.totalPlankSeconds || 0) + (actualSeconds || 0);
+  const {
+    level: newTimeBadgeLevel,
+    completed: newCompletedTimeBadges,
+    newlyEarned: newlyEarnedTimeBadge,
+  } = calcTimeBadgeLevel(
+    newTotalPlankSeconds,
+    existing.currentTimeBadgeLevel || 0,
+    existing.completedTimeBadges || {}
+  );
+
   const updated = {
     userId,
     displayName: displayName || existing.displayName || null,
     joined: true,
     totalSessions: newTotalSessions,
     totalSeconds: newTotalSeconds,
+    totalPlankSeconds: newTotalPlankSeconds,
     bestSeconds: newBestSeconds,
     avgSeconds: newAvgSeconds,
     currentStreak: newCurrentStreak,
@@ -247,11 +315,12 @@ export async function logPracticeSession({
     lastSessionDate: newLastSessionDate,
     lastSessionAt: nowTs,
     currentStreakBadgeLevel: newStreakBadgeLevel,
-    completedStreakBadges:
-      existing.completedStreakBadges || { 3: 0, 7: 0, 14: 0, 21: 0, 28: 0 },
+    completedStreakBadges,
     doubleBadgeCount: newDouble,
     tripleBadgeCount: newTriple,
     quadrupleBadgeCount: newQuad,
+    currentTimeBadgeLevel: newTimeBadgeLevel,
+    completedTimeBadges: newCompletedTimeBadges,
     joinedAt: existing.joinedAt || serverTimestamp(),
     leftAt: null,
     updatedAt: serverTimestamp(),
@@ -278,6 +347,9 @@ export async function logPracticeSession({
           ? newTriple
           : newQuad,
     });
+  }
+  if (newlyEarnedTimeBadge) {
+    newBadges.push({ type: "time", value: newlyEarnedTimeBadge });
   }
 
   return { newBadges, stats: updated };
