@@ -3,20 +3,23 @@ import React, { useEffect } from "react";
 
 /**
  * Badge celebration modal - shows newly earned badges with animation.
- * Auto-closes after 3 seconds UNLESS isLifetimeStreak=true,
- * in which case it stays open until user taps "Awesome!".
+ * Auto-closes after 6s for 1 badge, +3s for each additional badge earned,
+ * UNLESS isLifetimeStreak=true, in which case it stays open until user taps "Awesome!".
  */
 export default function BadgeCelebration({ badges, onClose, isLifetimeStreak = false }) {
   useEffect(() => {
     // No auto-close for lifetime streak milestones — user must tap Awesome
     if (isLifetimeStreak) return;
 
+    // 6s base + 3s per additional badge (e.g. 2 badges = 9s, 3 badges = 12s)
+    const displayTime = 6000 + (badges.length - 1) * 3000;
+
     const timer = setTimeout(() => {
       onClose();
-    }, 3000);
+    }, displayTime);
 
     return () => clearTimeout(timer);
-  }, [onClose, isLifetimeStreak]);
+  }, [onClose, isLifetimeStreak, badges.length]);
 
   const getBadgeDisplay = (badge) => {
     if (badge.type === "legacyRun") {
