@@ -13,6 +13,30 @@ function formatSeconds(sec) {
   return `${mins}m ${rem}s`;
 }
 
+// ── Time Bar helpers ──────────────────────────────────────────────────────
+// Milestones every 15 min (900s). The bar shows a rolling 30-min (2-milestone)
+// window: how far you are toward the NEXT milestone within that window.
+const MILESTONE_STEP = 900; // 15 min in seconds
+
+function getTimeBarInfo(totalPlankSeconds, currentTimeBadgeLevel) {
+  const earned = currentTimeBadgeLevel || 0; // seconds at last earned milestone
+  // Progress beyond the last milestone
+  const progressSec = Math.max(0, totalPlankSeconds - earned);
+  // Within a 30-min window (2 milestones), cap at that
+  const windowSec = MILESTONE_STEP * 2; // 1800s = 30 min
+  const cappedProgress = Math.min(progressSec, windowSec);
+  const pct = Math.round((cappedProgress / windowSec) * 100);
+
+  // Tick marks at 10m and 20m within the 30-min window
+  const tick10 = Math.round((600 / windowSec) * 100);  // 10 min
+  const tick20 = Math.round((1200 / windowSec) * 100); // 20 min
+
+  // How many total 30-min badges earned
+  const badgesEarned = Math.floor(earned / windowSec);
+
+  return { pct, tick10, tick20, badgesEarned, windowSec, cappedProgress };
+}
+
 export default function PracticeCard({
   userId,
   onStartPractice,
@@ -61,6 +85,8 @@ export default function PracticeCard({
   const avgSeconds = stats?.avgSeconds || 0;
   const currentStreak = stats?.currentStreak || 0;
   const bestStreak = stats?.bestStreak || 0;
+  const totalPlankSeconds = stats?.totalPlankSeconds || 0;
+  const currentTimeBadgeLevel = stats?.currentTimeBadgeLevel || 0;
 
   const completedStreaks = stats?.completedStreakBadges || {};
   const currentStreakBadgeLevel = stats?.currentStreakBadgeLevel || 0;
@@ -68,6 +94,12 @@ export default function PracticeCard({
   const doubles = stats?.doubleBadgeCount || 0;
   const triples = stats?.tripleBadgeCount || 0;
   const quads = stats?.quadrupleBadgeCount || 0;
+
+  // Time bar data
+  const { pct, tick10, tick20, badgesEarned } = getTimeBarInfo(
+    totalPlankSeconds,
+    currentTimeBadgeLevel
+  );
 
   const streakPillConfig = [
     { days: 3,  label: "3-Day",  fontSize: 12 },
@@ -90,7 +122,12 @@ export default function PracticeCard({
     quads > 0 && { emoji: "👑", label: "4x", count: quads, bg: "#f3e8ff", border: "#a855f7", color: "#581c87" },
   ].filter(Boolean);
 
-  const hasBadges = streakPills.length > 0 || multiplierPills.length > 0;
+  // Time badge pills (earned 30-min badges)
+  const timePills = badgesEarned > 0
+    ? [{ emoji: "⏱️", label: "30m", count: badgesEarned, bg: "#dbeafe", border: "#3b82f6", color: "#1e40af" }]
+    : [];
+
+  const hasBadges = streakPills.length > 0 || multiplierPills.length > 0 || timePills.length > 0;
 
   // Shared style for stat value text — slightly smaller to fit 4 columns comfortably
   const statValueStyle = { fontSize: "17px", fontWeight: "bold", color: "#065f46" };
@@ -235,6 +272,75 @@ export default function PracticeCard({
                 </div>
               )}
 
+              {/* ── Practice Time Progress Bar ─────────────────────────── */}
+              <div style={{ marginBottom: "14px" }}>
+                {/* Header row */}
+                <div style={{
+                  display: "flex", justifyContent: "space-between",
+                  alignItems: "center", marginBottom: "6px",
+                }}>
+                  <span style={{ fontSize: "11px", fontWeight: "700", color: "#065f46", letterSpacing: "0.05em" }}>
+                    PRACTICE TIME
+                  </span>
+                  <span style={{ fontSize: "11px", color: "#047857", fontWeight: "600" }}>
+                    {formatSeconds(totalPlankSeconds)} total
+                  </span>
+                </div>
+
+                {/* Track */}
+                <div style={{
+                  position: "relative",
+                  height: "10px",
+                  backgroundColor: "#d1fae5",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                }}>
+                  {/* Fill */}
+                  <div style={{
+                    position: "absolute", left: 0, top: 0, bottom: 0,
+                    width: `${pct}%`,
+                    background: "linear-gradient(90deg, #10b981, #059669)",
+                    borderRadius: "999px",
+                    transition: "width 0.4s ease",
+                  }} />
+                  {/* Tick at 10 min */}
+                  <div style={{
+                    position: "absolute", top: 0, bottom: 0,
+                    left: `${tick10}%`,
+                    width: "2px",
+                    backgroundColor: "rgba(255,255,255,0.7)",
+                  }} />
+                  {/* Tick at 20 min */}
+                  <div style={{
+                    position: "absolute", top: 0, bottom: 0,
+                    left: `${tick20}%`,
+                    width: "2px",
+                    backgroundColor: "rgba(255,255,255,0.7)",
+                  }} />
+                </div>
+
+                {/* Tick labels */}
+                <div style={{
+                  position: "relative", height: "16px", marginTop: "3px",
+                }}>
+                  <span style={{
+                    position: "absolute", left: `${tick10}%`,
+                    transform: "translateX(-50%)",
+                    fontSize: "10px", color: "#6b7280",
+                  }}>10m</span>
+                  <span style={{
+                    position: "absolute", left: `${tick20}%`,
+                    transform: "translateX(-50%)",
+                    fontSize: "10px", color: "#6b7280",
+                  }}>20m</span>
+                  <span style={{
+                    position: "absolute", right: 0,
+                    fontSize: "10px", color: "#059669", fontWeight: "700",
+                  }}>🏆 30m</span>
+                </div>
+              </div>
+              {/* ── End Time Bar ───────────────────────────────────────── */}
+
               {hasBadges && (
                 <div style={{ marginBottom: "14px" }}>
                   <div style={{ fontSize: "11px", fontWeight: "700", color: "#065f46", marginBottom: "6px" }}>BADGES</div>
@@ -253,6 +359,19 @@ export default function PracticeCard({
                       </span>
                     ))}
                     {multiplierPills.map((pill) => (
+                      <span
+                        key={pill.label}
+                        style={{
+                          padding: "4px 10px",
+                          background: pill.bg, border: `1.5px solid ${pill.border}`,
+                          borderRadius: "20px", fontSize: "12px",
+                          fontWeight: "600", color: pill.color,
+                        }}
+                      >
+                        {pill.emoji} {pill.label} ×{pill.count}
+                      </span>
+                    ))}
+                    {timePills.map((pill) => (
                       <span
                         key={pill.label}
                         style={{
