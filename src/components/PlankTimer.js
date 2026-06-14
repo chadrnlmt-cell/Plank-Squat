@@ -98,6 +98,19 @@ const MILESTONES = [
   },
 ];
 
+// ── Practice streak bar helpers (same milestones as PracticeCard) ─────────
+const PRACTICE_STREAK_MILESTONES = [3, 7, 14, 21, 28];
+
+function getPracticeStreakBarInfo(currentStreak) {
+  const streak = currentStreak || 0;
+  const nextMilestone = PRACTICE_STREAK_MILESTONES.find((m) => m > streak) || PRACTICE_STREAK_MILESTONES[PRACTICE_STREAK_MILESTONES.length - 1];
+  const prevMilestone = PRACTICE_STREAK_MILESTONES.slice().reverse().find((m) => m <= streak) || 0;
+  const window = nextMilestone - prevMilestone;
+  const progress = streak - prevMilestone;
+  const pct = window > 0 ? Math.round((progress / window) * 100) : 100;
+  return { pct, currentStreak: streak, nextMilestone, prevMilestone, atMax: streak >= 28 };
+}
+
 export default function PlankTimer({
   targetSeconds,
   day,
@@ -113,6 +126,7 @@ export default function PlankTimer({
   onCancel,
   onRedoUsed,
   isPractice = false,
+  practiceStats = null,
 }) {
   const [stage, setStage] = useState("countdown");
   // Stages: countdown | active | paused | autoStopping | stillGoingPrompt | keepRedoScreen | complete | failed
@@ -154,6 +168,11 @@ export default function PlankTimer({
   const wakeLockRef = useRef(null);
 
   const RECOVERY_LIMIT = 60;
+
+  // Practice streak bar info (only used when isPractice)
+  const practiceCurrentStreak = practiceStats?.currentStreak || 0;
+  const practiceTotalSessions = practiceStats?.totalSessions || 0;
+  const practiceStreakBar = getPracticeStreakBarInfo(practiceCurrentStreak);
 
   // Scroll to top on mount so all overlays/popups are fully visible
   useEffect(() => {
@@ -703,6 +722,71 @@ export default function PlankTimer({
   // Check if any of the new badges is a lifetime streak (legacyRun)
   const hasLifetimeStreakBadge = newBadges.some((b) => b.type === "legacyRun");
 
+  // ── Practice streak progress bar (shown during active/paused timer) ──────
+  const renderPracticeStreakBar = () => {
+    if (!isPractice) return null;
+    const { pct, currentStreak: cs, nextMilestone, prevMilestone, atMax } = practiceStreakBar;
+    return (
+      <div style={{
+        position: "absolute",
+        bottom: "24px",
+        left: "20px",
+        right: "20px",
+        maxWidth: "460px",
+        margin: "0 auto",
+      }}>
+        {/* Label row */}
+        <div style={{
+          display: "flex", justifyContent: "space-between",
+          alignItems: "center", marginBottom: "5px",
+        }}>
+          <span style={{ fontSize: "11px", fontWeight: "700", color: "#10b981", letterSpacing: "0.05em" }}>
+            🔥 STREAK
+          </span>
+          <span style={{ fontSize: "11px", color: "#6b7280", fontWeight: "600" }}>
+            {atMax
+              ? `${cs} days 🏆`
+              : `Day ${cs} → ${nextMilestone}-day badge`}
+          </span>
+        </div>
+        {/* Track */}
+        <div style={{
+          position: "relative",
+          height: "8px",
+          backgroundColor: "rgba(16,185,129,0.2)",
+          borderRadius: "999px",
+          overflow: "hidden",
+        }}>
+          <div style={{
+            position: "absolute", left: 0, top: 0, bottom: 0,
+            width: `${pct}%`,
+            background: cs === 0
+              ? "rgba(16,185,129,0.2)"
+              : "linear-gradient(90deg, #10b981, #059669)",
+            borderRadius: "999px",
+            transition: "width 0.4s ease",
+          }} />
+          <div style={{
+            position: "absolute", top: 0, bottom: 0,
+            left: "50%", width: "2px",
+            backgroundColor: "rgba(255,255,255,0.5)",
+          }} />
+        </div>
+        {/* Tick labels */}
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "3px" }}>
+          <span style={{ fontSize: "10px", color: "#6b7280" }}>
+            {prevMilestone > 0 ? `${prevMilestone}d` : "Start"}
+          </span>
+          {!atMax && (
+            <span style={{ fontSize: "10px", color: "#10b981", fontWeight: "700" }}>
+              🏆 {nextMilestone}d
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       {/* Badge Celebration Modal */}
@@ -918,6 +1002,7 @@ export default function PlankTimer({
               transition: "margin-top 0.4s ease",
             }}
           >
+            {/* Challenge header line — shows Day X for challenges, Session # for practice */}
             <div
               style={{
                 fontSize: "20px",
@@ -925,7 +1010,9 @@ export default function PlankTimer({
                 marginBottom: "20px",
               }}
             >
-              Day {day} challenge — Goal: {formatGoalTime(targetSeconds)}
+              {isPractice
+                ? `Session ${practiceTotalSessions + 1} · Goal: ${formatGoalTime(targetSeconds)}`
+                : `Day ${day} challenge — Goal: ${formatGoalTime(targetSeconds)}`}
             </div>
 
             {stage === "paused" && (
@@ -1038,6 +1125,10 @@ export default function PlankTimer({
           </div>
         )}
 
+        {/* Practice streak bar — anchored at bottom during active/paused */}
+        {(stage === "active" || stage === "paused" || stage === "autoStopping") &&
+          renderPracticeStreakBar()}
+
         {/* STILL GOING PROMPT */}
         {stage === "stillGoingPrompt" && (
           <div
@@ -1135,7 +1226,7 @@ export default function PlankTimer({
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: "80px", marginBottom: "20px" }}>🎉</div>
             <h2 style={{ color: "var(--color-success)", marginBottom: "16px" }}>
-              Day {day} challenge Complete!
+              {isPractice ? "Practice Session Complete!" : `Day ${day} challenge Complete!`}
             </h2>
             <p style={{ fontSize: "24px", color: "var(--color-text)", fontWeight: "600" }}>
               {formatTime(frozenTime)}
@@ -1153,11 +1244,15 @@ export default function PlankTimer({
           <div style={{ textAlign: "center", padding: "20px" }}>
             <div style={{ fontSize: "60px", marginBottom: "20px" }}>📝</div>
             <h2 style={{ color: "var(--color-text)", marginBottom: "12px" }}>
-              Day {day} challenge logged - tomorrow's a new opportunity!
+              {isPractice
+                ? "Session logged — keep practicing! 💪"
+                : `Day ${day} challenge logged - tomorrow's a new opportunity!`}
             </h2>
-            <p style={{ color: "var(--color-text-secondary)", fontSize: "18px" }}>
-              Ready to crush Day {day + 1} challenge tomorrow!
-            </p>
+            {!isPractice && (
+              <p style={{ color: "var(--color-text-secondary)", fontSize: "18px" }}>
+                Ready to crush Day {day + 1} challenge tomorrow!
+              </p>
+            )}
           </div>
         )}
       </div>

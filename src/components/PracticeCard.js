@@ -37,6 +37,23 @@ function getTimeBarInfo(totalPlankSeconds, currentTimeBadgeLevel) {
   return { pct, tick10, tick20, badgesEarned, windowSec, cappedProgress };
 }
 
+// ── Streak Bar helpers ──────────────────────────────────────────────────
+// Shows progress toward the next streak milestone (3, 7, 14, 21, 28 days).
+// Styled identically to the challenge Day-X-of-Y bar.
+const STREAK_MILESTONES = [3, 7, 14, 21, 28];
+
+function getStreakBarInfo(currentStreak) {
+  const streak = currentStreak || 0;
+  // Find the next milestone above the current streak
+  const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) || STREAK_MILESTONES[STREAK_MILESTONES.length - 1];
+  // Previous milestone (start of current window)
+  const prevMilestone = STREAK_MILESTONES.slice().reverse().find((m) => m <= streak) || 0;
+  const window = nextMilestone - prevMilestone;
+  const progress = streak - prevMilestone;
+  const pct = window > 0 ? Math.round((progress / window) * 100) : 100;
+  return { pct, currentStreak: streak, nextMilestone, prevMilestone, atMax: streak >= 28 };
+}
+
 export default function PracticeCard({
   userId,
   onStartPractice,
@@ -100,6 +117,9 @@ export default function PracticeCard({
     totalPlankSeconds,
     currentTimeBadgeLevel
   );
+
+  // Streak bar data
+  const streakBarInfo = getStreakBarInfo(currentStreak);
 
   const streakPillConfig = [
     { days: 3,  label: "3-Day",  fontSize: 12 },
@@ -271,6 +291,74 @@ export default function PracticeCard({
                   )}
                 </div>
               )}
+
+              {/* ── Practice Streak Progress Bar (matches challenge Day-X-of-Y style) ── */}
+              {totalSessions > 0 && (
+                <div style={{ marginBottom: "14px" }}>
+                  {/* Header row */}
+                  <div style={{
+                    display: "flex", justifyContent: "space-between",
+                    alignItems: "center", marginBottom: "6px",
+                  }}>
+                    <span style={{ fontSize: "11px", fontWeight: "700", color: "#065f46", letterSpacing: "0.05em" }}>
+                      🔥 STREAK PROGRESS
+                    </span>
+                    <span style={{ fontSize: "11px", color: "#047857", fontWeight: "600" }}>
+                      {streakBarInfo.atMax
+                        ? `${currentStreak} days 🏆`
+                        : `Day ${currentStreak} → ${streakBarInfo.nextMilestone}-day badge`}
+                    </span>
+                  </div>
+
+                  {/* Track — same height/style as challenge bar */}
+                  <div style={{
+                    position: "relative",
+                    height: "10px",
+                    backgroundColor: "#d1fae5",
+                    borderRadius: "999px",
+                    overflow: "hidden",
+                  }}>
+                    {/* Fill */}
+                    <div style={{
+                      position: "absolute", left: 0, top: 0, bottom: 0,
+                      width: `${streakBarInfo.pct}%`,
+                      background: currentStreak === 0
+                        ? "#d1fae5"
+                        : "linear-gradient(90deg, #10b981, #059669)",
+                      borderRadius: "999px",
+                      transition: "width 0.4s ease",
+                    }} />
+                    {/* Midpoint tick (halfway to next milestone) */}
+                    <div style={{
+                      position: "absolute", top: 0, bottom: 0,
+                      left: "50%",
+                      width: "2px",
+                      backgroundColor: "rgba(255,255,255,0.7)",
+                    }} />
+                  </div>
+
+                  {/* Tick labels */}
+                  <div style={{
+                    position: "relative", height: "16px", marginTop: "3px",
+                  }}>
+                    <span style={{
+                      position: "absolute", left: 0,
+                      fontSize: "10px", color: "#6b7280",
+                    }}>
+                      {streakBarInfo.prevMilestone > 0 ? `${streakBarInfo.prevMilestone}d` : "Start"}
+                    </span>
+                    {!streakBarInfo.atMax && (
+                      <span style={{
+                        position: "absolute", right: 0,
+                        fontSize: "10px", color: "#059669", fontWeight: "700",
+                      }}>
+                        🏆 {streakBarInfo.nextMilestone}d
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {/* ── End Streak Bar ──────────────────────────────────────── */}
 
               {/* ── Practice Time Progress Bar ─────────────────────────── */}
               <div style={{ marginBottom: "14px" }}>
