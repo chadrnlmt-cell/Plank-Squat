@@ -156,16 +156,21 @@ export async function joinPractice(userId, displayName) {
   }
 }
 
-// leavePractice — sets joined:false AND disables both reminder slots so
-// push notifications stop immediately (mirrors challenge-end behaviour).
+// leavePractice — FULLY resets all stats, badges, streak, and totals to zero,
+// then sets joined:false. This ensures rejoining starts completely fresh.
+// Also disables all reminder slots so push notifications stop immediately.
 export async function leavePractice(userId) {
   if (!userId) return;
 
-  // 1. Mark user as left
   const statsRef = doc(db, "practiceUserStats", userId);
   const snap = await getDoc(statsRef);
   if (!snap.exists()) return;
-  await updateDoc(statsRef, {
+
+  const existing = snap.data();
+
+  // 1. Overwrite the entire doc with a clean default state
+  await setDoc(statsRef, {
+    ...defaultStats(userId, existing.displayName || null),
     joined: false,
     leftAt: serverTimestamp(),
   });
@@ -184,7 +189,7 @@ export async function leavePractice(userId) {
     await Promise.all(disablePromises);
   } catch (err) {
     console.error("leavePractice: error disabling reminders:", err);
-    // Non-fatal — user is still marked as left
+    // Non-fatal — user stats are already reset
   }
 }
 
