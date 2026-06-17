@@ -276,8 +276,30 @@ export default function App() {
   };
 
   // ── Challenge actions ─────────────────────────────────────────────────────
-  const handleStartChallenge = (challengeDetails, userChallengeId, currentDay, challengeId, teamId) => {
-    setActiveChallengeData({ challengeDetails, userChallengeId, currentDay, challengeId, teamId, isPractice: false });
+  const handleStartChallenge = async (challengeDetails, userChallengeId, currentDay, challengeId, teamId) => {
+    // Fetch current challenge streak from userStats so the streak bar has live data
+    let latestChallengeStats = null;
+    if (user) {
+      try {
+        const userStatsSnap = await getDoc(doc(db, "userStats", user.uid));
+        if (userStatsSnap.exists()) {
+          const statsData = userStatsSnap.data();
+          const currentStreak = statsData?.badges?.challenges?.[challengeId]?.currentStreak || 0;
+          latestChallengeStats = { currentStreak };
+        }
+      } catch (err) {
+        console.error("handleStartChallenge: could not load challengeStats", err);
+      }
+    }
+    setActiveChallengeData({
+      challengeDetails,
+      userChallengeId,
+      currentDay,
+      challengeId,
+      teamId,
+      isPractice: false,
+      challengeStats: latestChallengeStats,
+    });
     setAttemptNumber(1);
     setShowRedoMessage(false);
   };
@@ -342,6 +364,7 @@ export default function App() {
       teamId,
       isPractice: isPracticeFlow,
       practiceStats: practiceStatsForTimer,
+      challengeStats: challengeStatsForTimer,
     } = activeChallengeData;
 
     if (isPracticeFlow) {
@@ -383,6 +406,7 @@ export default function App() {
           teamId={teamId}
           numberOfDays={challengeDetails.numberOfDays || 30}
           attemptNumber={attemptNumber}
+          challengeStats={challengeStatsForTimer}
           onComplete={handleChallengeComplete}
           onCancel={handleChallengeCancel}
           onRedoUsed={handleRedoUsed}
