@@ -98,13 +98,13 @@ const MILESTONES = [
   },
 ];
 
-// ── Practice streak bar helpers (same milestones as PracticeCard) ─────────
-const PRACTICE_STREAK_MILESTONES = [3, 7, 14, 21, 28];
+// ── Streak bar helpers ────────────────────────────────────────────────────
+const STREAK_MILESTONES = [3, 7, 14, 21, 28];
 
-function getPracticeStreakBarInfo(currentStreak) {
+function getStreakBarInfo(currentStreak) {
   const streak = currentStreak || 0;
-  const nextMilestone = PRACTICE_STREAK_MILESTONES.find((m) => m > streak) || PRACTICE_STREAK_MILESTONES[PRACTICE_STREAK_MILESTONES.length - 1];
-  const prevMilestone = PRACTICE_STREAK_MILESTONES.slice().reverse().find((m) => m <= streak) || 0;
+  const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) || STREAK_MILESTONES[STREAK_MILESTONES.length - 1];
+  const prevMilestone = STREAK_MILESTONES.slice().reverse().find((m) => m <= streak) || 0;
   const window = nextMilestone - prevMilestone;
   const progress = streak - prevMilestone;
   const pct = window > 0 ? Math.round((progress / window) * 100) : 100;
@@ -127,6 +127,7 @@ export default function PlankTimer({
   onRedoUsed,
   isPractice = false,
   practiceStats = null,
+  challengeStats = null,
 }) {
   const [stage, setStage] = useState("countdown");
   // Stages: countdown | active | paused | autoStopping | stillGoingPrompt | keepRedoScreen | complete | failed
@@ -169,10 +170,12 @@ export default function PlankTimer({
 
   const RECOVERY_LIMIT = 60;
 
-  // Practice streak bar info — reads from the practiceStats prop passed by App.js
+  // Streak bar — works for both practice and active challenge
   const practiceCurrentStreak = practiceStats?.currentStreak || 0;
   const practiceTotalSessions = practiceStats?.totalSessions || 0;
-  const practiceStreakBar = getPracticeStreakBarInfo(practiceCurrentStreak);
+  const challengeCurrentStreak = challengeStats?.currentStreak || 0;
+  const activeStreak = isPractice ? practiceCurrentStreak : challengeCurrentStreak;
+  const streakBar = getStreakBarInfo(activeStreak);
 
   // Scroll to top on mount so all overlays/popups are fully visible
   useEffect(() => {
@@ -722,16 +725,23 @@ export default function PlankTimer({
   // Check if any of the new badges is a lifetime streak (legacyRun)
   const hasLifetimeStreakBadge = newBadges.some((b) => b.type === "legacyRun");
 
-  // ── Practice streak progress bar ─────────────────────────────────────────
-  // Positioned halfway between its old bottom anchor (24px) and the Pause
-  // button (~236px from the bottom), so bottom ≈ 130px.
-  const renderPracticeStreakBar = () => {
-    if (!isPractice) return null;
-    const { pct, currentStreak: cs, nextMilestone, prevMilestone, atMax } = practiceStreakBar;
+  // ── Streak progress bar — shown for both practice and active challenge ────
+  const renderStreakBar = () => {
+    // Only show if we actually have streak data to display
+    if (isPractice && !practiceStats) return null;
+    if (!isPractice && !challengeStats) return null;
+
+    const { pct, currentStreak: cs, nextMilestone, prevMilestone, atMax } = streakBar;
+    const streakColor = isPractice ? "#10b981" : "#3b82f6";
+    const streakColorFaint = isPractice ? "rgba(16,185,129,0.2)" : "rgba(59,130,246,0.2)";
+    const streakGradient = isPractice
+      ? "linear-gradient(90deg, #10b981, #059669)"
+      : "linear-gradient(90deg, #3b82f6, #2563eb)";
+
     return (
       <div style={{
         position: "absolute",
-        bottom: "130px",
+        bottom: "120px",
         left: "20px",
         right: "20px",
         maxWidth: "460px",
@@ -742,7 +752,7 @@ export default function PlankTimer({
           display: "flex", justifyContent: "space-between",
           alignItems: "center", marginBottom: "5px",
         }}>
-          <span style={{ fontSize: "11px", fontWeight: "700", color: "#10b981", letterSpacing: "0.05em" }}>
+          <span style={{ fontSize: "11px", fontWeight: "700", color: streakColor, letterSpacing: "0.05em" }}>
             🔥 STREAK
           </span>
           <span style={{ fontSize: "11px", color: "#6b7280", fontWeight: "600" }}>
@@ -755,16 +765,14 @@ export default function PlankTimer({
         <div style={{
           position: "relative",
           height: "8px",
-          backgroundColor: "rgba(16,185,129,0.2)",
+          backgroundColor: streakColorFaint,
           borderRadius: "999px",
           overflow: "hidden",
         }}>
           <div style={{
             position: "absolute", left: 0, top: 0, bottom: 0,
             width: `${pct}%`,
-            background: cs === 0
-              ? "rgba(16,185,129,0.2)"
-              : "linear-gradient(90deg, #10b981, #059669)",
+            background: cs === 0 ? streakColorFaint : streakGradient,
             borderRadius: "999px",
             transition: "width 0.4s ease",
           }} />
@@ -780,7 +788,7 @@ export default function PlankTimer({
             {prevMilestone > 0 ? `${prevMilestone}d` : "Start"}
           </span>
           {!atMax && (
-            <span style={{ fontSize: "10px", color: "#10b981", fontWeight: "700" }}>
+            <span style={{ fontSize: "10px", color: streakColor, fontWeight: "700" }}>
               🏆 {nextMilestone}d
             </span>
           )}
@@ -1127,9 +1135,9 @@ export default function PlankTimer({
           </div>
         )}
 
-        {/* Practice streak bar — shown during active/paused/autoStopping */}
+        {/* Streak bar — shown during active/paused/autoStopping for both modes */}
         {(stage === "active" || stage === "paused" || stage === "autoStopping") &&
-          renderPracticeStreakBar()}
+          renderStreakBar()}
 
         {/* STILL GOING PROMPT */}
         {stage === "stillGoingPrompt" && (
