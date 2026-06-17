@@ -169,7 +169,7 @@ export default function PlankTimer({
 
   const RECOVERY_LIMIT = 60;
 
-  // Practice streak bar info (only used when isPractice)
+  // Practice streak bar info — reads from the practiceStats prop passed by App.js
   const practiceCurrentStreak = practiceStats?.currentStreak || 0;
   const practiceTotalSessions = practiceStats?.totalSessions || 0;
   const practiceStreakBar = getPracticeStreakBarInfo(practiceCurrentStreak);
@@ -722,14 +722,16 @@ export default function PlankTimer({
   // Check if any of the new badges is a lifetime streak (legacyRun)
   const hasLifetimeStreakBadge = newBadges.some((b) => b.type === "legacyRun");
 
-  // ── Practice streak progress bar (shown during active/paused timer) ──────
+  // ── Practice streak progress bar ─────────────────────────────────────────
+  // Positioned halfway between its old bottom anchor (24px) and the Pause
+  // button (~236px from the bottom), so bottom ≈ 130px.
   const renderPracticeStreakBar = () => {
     if (!isPractice) return null;
     const { pct, currentStreak: cs, nextMilestone, prevMilestone, atMax } = practiceStreakBar;
     return (
       <div style={{
         position: "absolute",
-        bottom: "24px",
+        bottom: "130px",
         left: "20px",
         right: "20px",
         maxWidth: "460px",
@@ -1002,7 +1004,7 @@ export default function PlankTimer({
               transition: "margin-top 0.4s ease",
             }}
           >
-            {/* Challenge header line — shows Day X for challenges, Session # for practice */}
+            {/* Challenge header line */}
             <div
               style={{
                 fontSize: "20px",
@@ -1125,7 +1127,7 @@ export default function PlankTimer({
           </div>
         )}
 
-        {/* Practice streak bar — anchored at bottom during active/paused */}
+        {/* Practice streak bar — shown during active/paused/autoStopping */}
         {(stage === "active" || stage === "paused" || stage === "autoStopping") &&
           renderPracticeStreakBar()}
 

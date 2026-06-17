@@ -37,7 +37,7 @@ import InstallPrompt from "./components/InstallPrompt";
 import ChallengeEndSummaryModal from "./components/ChallengeEndSummaryModal";
 import ChallengeReminder from "./components/ChallengeReminder";
 import { PRACTICE_CHALLENGE_ID, PRACTICE_TARGET_SECONDS } from "./practiceConstants";
-import { isJoinedPractice, joinPractice } from "./practiceHelpers";
+import { isJoinedPractice, joinPractice, getPracticeStats } from "./practiceHelpers";
 import { initForegroundNotifications, refreshFCMTokenIfGranted } from "./notificationHelpers";
 
 export default function App() {
@@ -282,7 +282,16 @@ export default function App() {
     setShowRedoMessage(false);
   };
 
-  const handleStartPractice = () => {
+  const handleStartPractice = async () => {
+    // Fetch current practiceStats so the streak bar has live data
+    let latestPracticeStats = null;
+    if (user) {
+      try {
+        latestPracticeStats = await getPracticeStats(user.uid);
+      } catch (err) {
+        console.error("handleStartPractice: could not load practiceStats", err);
+      }
+    }
     setActiveChallengeData({
       challengeDetails: { name: "Practice", type: "plank", numberOfDays: 1 },
       userChallengeId: null,
@@ -290,6 +299,7 @@ export default function App() {
       challengeId: PRACTICE_CHALLENGE_ID,
       teamId: null,
       isPractice: true,
+      practiceStats: latestPracticeStats,
     });
     setAttemptNumber(1);
     setShowRedoMessage(false);
@@ -331,6 +341,7 @@ export default function App() {
       challengeId,
       teamId,
       isPractice: isPracticeFlow,
+      practiceStats: practiceStatsForTimer,
     } = activeChallengeData;
 
     if (isPracticeFlow) {
@@ -347,6 +358,7 @@ export default function App() {
           teamId={null}
           numberOfDays={1}
           attemptNumber={1}
+          practiceStats={practiceStatsForTimer}
           onComplete={() => {
             setActiveChallengeData(null);
             setPracticeReloadKey((k) => k + 1);
