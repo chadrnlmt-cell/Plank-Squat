@@ -13,40 +13,25 @@ function formatSeconds(sec) {
   return `${mins}m ${rem}s`;
 }
 
-// ── Time Bar helpers ──────────────────────────────────────────────────────
-// Milestones every 15 min (900s). The bar shows a rolling 30-min (2-milestone)
-// window: how far you are toward the NEXT milestone within that window.
-const MILESTONE_STEP = 900; // 15 min in seconds
+const MILESTONE_STEP = 900;
 
 function getTimeBarInfo(totalPlankSeconds, currentTimeBadgeLevel) {
-  const earned = currentTimeBadgeLevel || 0; // seconds at last earned milestone
-  // Progress beyond the last milestone
+  const earned = currentTimeBadgeLevel || 0;
   const progressSec = Math.max(0, totalPlankSeconds - earned);
-  // Within a 30-min window (2 milestones), cap at that
-  const windowSec = MILESTONE_STEP * 2; // 1800s = 30 min
+  const windowSec = MILESTONE_STEP * 2;
   const cappedProgress = Math.min(progressSec, windowSec);
   const pct = Math.round((cappedProgress / windowSec) * 100);
-
-  // Tick marks at 10m and 20m within the 30-min window
-  const tick10 = Math.round((600 / windowSec) * 100);  // 10 min
-  const tick20 = Math.round((1200 / windowSec) * 100); // 20 min
-
-  // How many total 30-min badges earned
+  const tick10 = Math.round((600 / windowSec) * 100);
+  const tick20 = Math.round((1200 / windowSec) * 100);
   const badgesEarned = Math.floor(earned / windowSec);
-
   return { pct, tick10, tick20, badgesEarned, windowSec, cappedProgress };
 }
 
-// ── Streak Bar helpers ──────────────────────────────────────────────────
-// Shows progress toward the next streak milestone (3, 7, 14, 21, 28 days).
-// Styled identically to the challenge Day-X-of-Y bar.
 const STREAK_MILESTONES = [3, 7, 14, 21, 28];
 
 function getStreakBarInfo(currentStreak) {
   const streak = currentStreak || 0;
-  // Find the next milestone above the current streak
   const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) || STREAK_MILESTONES[STREAK_MILESTONES.length - 1];
-  // Previous milestone (start of current window)
   const prevMilestone = STREAK_MILESTONES.slice().reverse().find((m) => m <= streak) || 0;
   const window = nextMilestone - prevMilestone;
   const progress = streak - prevMilestone;
@@ -54,11 +39,7 @@ function getStreakBarInfo(currentStreak) {
   return { pct, currentStreak: streak, nextMilestone, prevMilestone, atMax: streak >= 28 };
 }
 
-export default function PracticeCard({
-  userId,
-  onStartPractice,
-  onLeft,
-}) {
+export default function PracticeCard({ userId, onStartPractice, onLeft }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
@@ -104,21 +85,13 @@ export default function PracticeCard({
   const bestStreak = stats?.bestStreak || 0;
   const totalPlankSeconds = stats?.totalPlankSeconds || 0;
   const currentTimeBadgeLevel = stats?.currentTimeBadgeLevel || 0;
-
   const completedStreaks = stats?.completedStreakBadges || {};
   const currentStreakBadgeLevel = stats?.currentStreakBadgeLevel || 0;
-
   const doubles = stats?.doubleBadgeCount || 0;
   const triples = stats?.tripleBadgeCount || 0;
   const quads = stats?.quadrupleBadgeCount || 0;
 
-  // Time bar data
-  const { pct, tick10, tick20, badgesEarned } = getTimeBarInfo(
-    totalPlankSeconds,
-    currentTimeBadgeLevel
-  );
-
-  // Streak bar data
+  const { pct, tick10, tick20, badgesEarned } = getTimeBarInfo(totalPlankSeconds, currentTimeBadgeLevel);
   const streakBarInfo = getStreakBarInfo(currentStreak);
 
   const streakPillConfig = [
@@ -130,29 +103,24 @@ export default function PracticeCard({
   ];
 
   const streakPills = streakPillConfig
-    .map((cfg) => ({
-      ...cfg,
-      count: (completedStreaks[cfg.days] || 0) + (currentStreakBadgeLevel >= cfg.days ? 1 : 0),
-    }))
+    .map((cfg) => ({ ...cfg, count: (completedStreaks[cfg.days] || 0) + (currentStreakBadgeLevel >= cfg.days ? 1 : 0) }))
     .filter((p) => p.count > 0);
 
   const multiplierPills = [
     doubles > 0 && { emoji: "⚡", label: "2x", count: doubles, bg: "#dbeafe", border: "#3b82f6", color: "#1e3a8a" },
     triples > 0 && { emoji: "🚀", label: "3x", count: triples, bg: "#fce7f3", border: "#ec4899", color: "#831843" },
-    quads > 0 && { emoji: "👑", label: "4x", count: quads, bg: "#f3e8ff", border: "#a855f7", color: "#581c87" },
+    quads > 0   && { emoji: "👑", label: "4x", count: quads,   bg: "#f3e8ff", border: "#a855f7", color: "#581c87" },
   ].filter(Boolean);
 
-  // Time badge pills (earned 30-min badges)
   const timePills = badgesEarned > 0
     ? [{ emoji: "⏱️", label: "30m", count: badgesEarned, bg: "#dbeafe", border: "#3b82f6", color: "#1e40af" }]
     : [];
 
   const hasBadges = streakPills.length > 0 || multiplierPills.length > 0 || timePills.length > 0;
 
-  // Shared style for stat value text — slightly smaller to fit 4 columns comfortably
   const statValueStyle = { fontSize: "17px", fontWeight: "bold", color: "#065f46" };
   const statLabelStyle = { fontSize: "11px", color: "#047857" };
-  const dividerStyle = { width: "1px", background: "#a7f3d0", flexShrink: 0 };
+  const dividerStyle  = { width: "1px", background: "#a7f3d0", flexShrink: 0 };
 
   return (
     <>
@@ -168,10 +136,12 @@ export default function PracticeCard({
           <div
             style={{
               backgroundColor: "#ffffff",
-              padding: "28px", borderRadius: "12px",
-              maxWidth: "380px", width: "100%",
-              border: "3px solid #10b981",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+              padding: "28px",
+              borderRadius: "12px",
+              maxWidth: "380px",
+              width: "100%",
+              border: "1px solid #e5e7eb",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
               textAlign: "center",
             }}
           >
@@ -184,10 +154,6 @@ export default function PracticeCard({
               color: "#1f2937",
               margin: "0 0 20px 0",
               lineHeight: 1.7,
-              background: "#f9fafb",
-              border: "1px solid #e5e7eb",
-              borderRadius: "8px",
-              padding: "12px",
               textAlign: "left",
             }}>
               Your badges, streaks, and session history are saved. Any reminders will be turned off automatically.
@@ -200,7 +166,8 @@ export default function PracticeCard({
                 style={{
                   flex: 1, padding: "12px", fontSize: "15px",
                   backgroundColor: "#ef4444", color: "white",
-                  border: "none", borderRadius: "8px", cursor: leaving ? "not-allowed" : "pointer",
+                  border: "none", borderRadius: "8px",
+                  cursor: leaving ? "not-allowed" : "pointer",
                   opacity: leaving ? 0.7 : 1,
                   fontWeight: "600",
                 }}
@@ -225,7 +192,7 @@ export default function PracticeCard({
         </div>
       )}
 
-      {/* Green practice card — identical structure to a challenge card */}
+      {/* Green practice card */}
       <div
         className="card"
         style={{
@@ -245,13 +212,7 @@ export default function PracticeCard({
               </p>
             </div>
             {currentStreak > 0 && (
-              <div
-                style={{
-                  display: "flex", flexDirection: "column", alignItems: "center",
-                  background: "#fef3c7", border: "2px solid #fbbf24",
-                  borderRadius: "12px", padding: "6px 12px", minWidth: "56px",
-                }}
-              >
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", background: "#fef3c7", border: "2px solid #fbbf24", borderRadius: "12px", padding: "6px 12px", minWidth: "56px" }}>
                 <span style={{ fontSize: "20px" }}>🔥</span>
                 <span style={{ fontSize: "16px", fontWeight: "bold", color: "#78350f", lineHeight: 1 }}>{currentStreak}</span>
                 <span style={{ fontSize: "10px", color: "#92400e" }}>day streak</span>
@@ -264,14 +225,7 @@ export default function PracticeCard({
           ) : (
             <>
               {totalSessions > 0 && (
-                <div
-                  style={{
-                    background: "rgba(16,185,129,0.08)",
-                    borderRadius: "10px", padding: "10px 12px",
-                    marginBottom: "14px",
-                  }}
-                >
-                  {/* Row 1: Sessions | Total Time | Avg Time | Best */}
+                <div style={{ background: "rgba(16,185,129,0.08)", borderRadius: "10px", padding: "10px 12px", marginBottom: "14px" }}>
                   <div style={{ display: "flex", gap: "8px", alignItems: "stretch" }}>
                     <div style={{ flex: 1, textAlign: "center" }}>
                       <div style={statValueStyle}>{totalSessions}</div>
@@ -293,15 +247,11 @@ export default function PracticeCard({
                       <div style={statLabelStyle}>Best</div>
                     </div>
                   </div>
-
-                  {/* Row 2: Best Streak — only shown when bestStreak > 0 */}
                   {bestStreak > 0 && (
                     <>
                       <div style={{ height: "1px", background: "#a7f3d0", margin: "8px 0" }} />
                       <div style={{ textAlign: "center" }}>
-                        <div style={statValueStyle}>
-                          🔥 {bestStreak} {bestStreak === 1 ? "day" : "days"}
-                        </div>
+                        <div style={statValueStyle}>🔥 {bestStreak} {bestStreak === 1 ? "day" : "days"}</div>
                         <div style={statLabelStyle}>Best Streak</div>
                       </div>
                     </>
@@ -309,183 +259,62 @@ export default function PracticeCard({
                 </div>
               )}
 
-              {/* ── Practice Streak Progress Bar (matches challenge Day-X-of-Y style) ── */}
               {totalSessions > 0 && (
                 <div style={{ marginBottom: "14px" }}>
-                  {/* Header row */}
-                  <div style={{
-                    display: "flex", justifyContent: "space-between",
-                    alignItems: "center", marginBottom: "6px",
-                  }}>
-                    <span style={{ fontSize: "11px", fontWeight: "700", color: "#065f46", letterSpacing: "0.05em" }}>
-                      🔥 STREAK PROGRESS
-                    </span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "11px", fontWeight: "700", color: "#065f46", letterSpacing: "0.05em" }}>🔥 STREAK PROGRESS</span>
                     <span style={{ fontSize: "11px", color: "#047857", fontWeight: "600" }}>
-                      {streakBarInfo.atMax
-                        ? `${currentStreak} days 🏆`
-                        : `Day ${currentStreak} → ${streakBarInfo.nextMilestone}-day badge`}
+                      {streakBarInfo.atMax ? `${currentStreak} days 🏆` : `Day ${currentStreak} → ${streakBarInfo.nextMilestone}-day badge`}
                     </span>
                   </div>
-
-                  {/* Track — same height/style as challenge bar */}
-                  <div style={{
-                    position: "relative",
-                    height: "10px",
-                    backgroundColor: "#d1fae5",
-                    borderRadius: "999px",
-                    overflow: "hidden",
-                  }}>
-                    {/* Fill */}
-                    <div style={{
-                      position: "absolute", left: 0, top: 0, bottom: 0,
-                      width: `${streakBarInfo.pct}%`,
-                      background: currentStreak === 0
-                        ? "#d1fae5"
-                        : "linear-gradient(90deg, #10b981, #059669)",
-                      borderRadius: "999px",
-                      transition: "width 0.4s ease",
-                    }} />
-                    {/* Midpoint tick (halfway to next milestone) */}
-                    <div style={{
-                      position: "absolute", top: 0, bottom: 0,
-                      left: "50%",
-                      width: "2px",
-                      backgroundColor: "rgba(255,255,255,0.7)",
-                    }} />
+                  <div style={{ position: "relative", height: "10px", backgroundColor: "#d1fae5", borderRadius: "999px", overflow: "hidden" }}>
+                    <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${streakBarInfo.pct}%`, background: currentStreak === 0 ? "#d1fae5" : "linear-gradient(90deg, #10b981, #059669)", borderRadius: "999px", transition: "width 0.4s ease" }} />
+                    <div style={{ position: "absolute", top: 0, bottom: 0, left: "50%", width: "2px", backgroundColor: "rgba(255,255,255,0.7)" }} />
                   </div>
-
-                  {/* Tick labels */}
-                  <div style={{
-                    position: "relative", height: "16px", marginTop: "3px",
-                  }}>
-                    <span style={{
-                      position: "absolute", left: 0,
-                      fontSize: "10px", color: "#6b7280",
-                    }}>
+                  <div style={{ position: "relative", height: "16px", marginTop: "3px" }}>
+                    <span style={{ position: "absolute", left: 0, fontSize: "10px", color: "#6b7280" }}>
                       {streakBarInfo.prevMilestone > 0 ? `${streakBarInfo.prevMilestone}d` : "Start"}
                     </span>
                     {!streakBarInfo.atMax && (
-                      <span style={{
-                        position: "absolute", right: 0,
-                        fontSize: "10px", color: "#059669", fontWeight: "700",
-                      }}>
-                        🏆 {streakBarInfo.nextMilestone}d
-                      </span>
+                      <span style={{ position: "absolute", right: 0, fontSize: "10px", color: "#059669", fontWeight: "700" }}>🏆 {streakBarInfo.nextMilestone}d</span>
                     )}
                   </div>
                 </div>
               )}
-              {/* ── End Streak Bar ──────────────────────────────────────── */}
 
-              {/* ── Practice Time Progress Bar ─────────────────────────── */}
               <div style={{ marginBottom: "14px" }}>
-                {/* Header row */}
-                <div style={{
-                  display: "flex", justifyContent: "space-between",
-                  alignItems: "center", marginBottom: "6px",
-                }}>
-                  <span style={{ fontSize: "11px", fontWeight: "700", color: "#065f46", letterSpacing: "0.05em" }}>
-                    PRACTICE TIME
-                  </span>
-                  <span style={{ fontSize: "11px", color: "#047857", fontWeight: "600" }}>
-                    {formatSeconds(totalPlankSeconds)} total
-                  </span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: "700", color: "#065f46", letterSpacing: "0.05em" }}>PRACTICE TIME</span>
+                  <span style={{ fontSize: "11px", color: "#047857", fontWeight: "600" }}>{formatSeconds(totalPlankSeconds)} total</span>
                 </div>
-
-                {/* Track */}
-                <div style={{
-                  position: "relative",
-                  height: "10px",
-                  backgroundColor: "#d1fae5",
-                  borderRadius: "999px",
-                  overflow: "hidden",
-                }}>
-                  {/* Fill */}
-                  <div style={{
-                    position: "absolute", left: 0, top: 0, bottom: 0,
-                    width: `${pct}%`,
-                    background: "linear-gradient(90deg, #10b981, #059669)",
-                    borderRadius: "999px",
-                    transition: "width 0.4s ease",
-                  }} />
-                  {/* Tick at 10 min */}
-                  <div style={{
-                    position: "absolute", top: 0, bottom: 0,
-                    left: `${tick10}%`,
-                    width: "2px",
-                    backgroundColor: "rgba(255,255,255,0.7)",
-                  }} />
-                  {/* Tick at 20 min */}
-                  <div style={{
-                    position: "absolute", top: 0, bottom: 0,
-                    left: `${tick20}%`,
-                    width: "2px",
-                    backgroundColor: "rgba(255,255,255,0.7)",
-                  }} />
+                <div style={{ position: "relative", height: "10px", backgroundColor: "#d1fae5", borderRadius: "999px", overflow: "hidden" }}>
+                  <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${pct}%`, background: "linear-gradient(90deg, #10b981, #059669)", borderRadius: "999px", transition: "width 0.4s ease" }} />
+                  <div style={{ position: "absolute", top: 0, bottom: 0, left: `${tick10}%`, width: "2px", backgroundColor: "rgba(255,255,255,0.7)" }} />
+                  <div style={{ position: "absolute", top: 0, bottom: 0, left: `${tick20}%`, width: "2px", backgroundColor: "rgba(255,255,255,0.7)" }} />
                 </div>
-
-                {/* Tick labels */}
-                <div style={{
-                  position: "relative", height: "16px", marginTop: "3px",
-                }}>
-                  <span style={{
-                    position: "absolute", left: `${tick10}%`,
-                    transform: "translateX(-50%)",
-                    fontSize: "10px", color: "#6b7280",
-                  }}>10m</span>
-                  <span style={{
-                    position: "absolute", left: `${tick20}%`,
-                    transform: "translateX(-50%)",
-                    fontSize: "10px", color: "#6b7280",
-                  }}>20m</span>
-                  <span style={{
-                    position: "absolute", right: 0,
-                    fontSize: "10px", color: "#059669", fontWeight: "700",
-                  }}>🏆 30m</span>
+                <div style={{ position: "relative", height: "16px", marginTop: "3px" }}>
+                  <span style={{ position: "absolute", left: `${tick10}%`, transform: "translateX(-50%)", fontSize: "10px", color: "#6b7280" }}>10m</span>
+                  <span style={{ position: "absolute", left: `${tick20}%`, transform: "translateX(-50%)", fontSize: "10px", color: "#6b7280" }}>20m</span>
+                  <span style={{ position: "absolute", right: 0, fontSize: "10px", color: "#059669", fontWeight: "700" }}>🏆 30m</span>
                 </div>
               </div>
-              {/* ── End Time Bar ───────────────────────────────────────── */}
 
               {hasBadges && (
                 <div style={{ marginBottom: "14px" }}>
                   <div style={{ fontSize: "11px", fontWeight: "700", color: "#065f46", marginBottom: "6px" }}>BADGES</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                     {streakPills.map((pill) => (
-                      <span
-                        key={pill.days}
-                        style={{
-                          padding: "4px 10px",
-                          background: "#fef3c7", border: "1.5px solid #fbbf24",
-                          borderRadius: "20px", fontSize: `${pill.fontSize}px`,
-                          fontWeight: "600", color: "#78350f",
-                        }}
-                      >
+                      <span key={pill.days} style={{ padding: "4px 10px", background: "#fef3c7", border: "1.5px solid #fbbf24", borderRadius: "20px", fontSize: `${pill.fontSize}px`, fontWeight: "600", color: "#78350f" }}>
                         🔥 {pill.label} ×{pill.count}
                       </span>
                     ))}
                     {multiplierPills.map((pill) => (
-                      <span
-                        key={pill.label}
-                        style={{
-                          padding: "4px 10px",
-                          background: pill.bg, border: `1.5px solid ${pill.border}`,
-                          borderRadius: "20px", fontSize: "12px",
-                          fontWeight: "600", color: pill.color,
-                        }}
-                      >
+                      <span key={pill.label} style={{ padding: "4px 10px", background: pill.bg, border: `1.5px solid ${pill.border}`, borderRadius: "20px", fontSize: "12px", fontWeight: "600", color: pill.color }}>
                         {pill.emoji} {pill.label} ×{pill.count}
                       </span>
                     ))}
                     {timePills.map((pill) => (
-                      <span
-                        key={pill.label}
-                        style={{
-                          padding: "4px 10px",
-                          background: pill.bg, border: `1.5px solid ${pill.border}`,
-                          borderRadius: "20px", fontSize: "12px",
-                          fontWeight: "600", color: pill.color,
-                        }}
-                      >
+                      <span key={pill.label} style={{ padding: "4px 10px", background: pill.bg, border: `1.5px solid ${pill.border}`, borderRadius: "20px", fontSize: "12px", fontWeight: "600", color: pill.color }}>
                         {pill.emoji} {pill.label} ×{pill.count}
                       </span>
                     ))}
@@ -504,11 +333,7 @@ export default function PracticeCard({
           <button
             className="btn btn--primary"
             onClick={onStartPractice}
-            style={{
-              width: "100%", fontSize: "16px", fontWeight: "bold",
-              backgroundColor: "#10b981", borderColor: "#10b981",
-              padding: "14px",
-            }}
+            style={{ width: "100%", fontSize: "16px", fontWeight: "bold", backgroundColor: "#10b981", borderColor: "#10b981", padding: "14px" }}
           >
             🏋️ Start Practice Session
           </button>
@@ -516,11 +341,7 @@ export default function PracticeCard({
           <div style={{ textAlign: "center", marginTop: "10px" }}>
             <button
               onClick={() => setShowLeaveConfirm(true)}
-              style={{
-                background: "none", border: "none",
-                fontSize: "12px", color: "#9ca3af",
-                cursor: "pointer", textDecoration: "underline",
-              }}
+              style={{ background: "none", border: "none", fontSize: "12px", color: "#9ca3af", cursor: "pointer", textDecoration: "underline" }}
             >
               Leave Practice Session
             </button>
