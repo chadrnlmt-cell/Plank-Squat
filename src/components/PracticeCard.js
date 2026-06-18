@@ -160,23 +160,36 @@ export default function PracticeCard({
         <div
           style={{
             position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.6)",
+            backgroundColor: "rgba(0,0,0,0.75)",
             display: "flex", alignItems: "center", justifyContent: "center",
             zIndex: 2000, padding: "20px",
           }}
         >
           <div
             style={{
-              backgroundColor: "var(--color-card)",
+              backgroundColor: "#ffffff",
               padding: "28px", borderRadius: "12px",
               maxWidth: "380px", width: "100%",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+              border: "3px solid #10b981",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
               textAlign: "center",
             }}
           >
             <div style={{ fontSize: "40px", marginBottom: "12px" }}>🏋️</div>
-            <h3 style={{ margin: "0 0 10px 0", color: "var(--color-text)" }}>Leave Practice Session?</h3>
-            <p style={{ fontSize: "14px", color: "var(--color-text-secondary)", margin: "0 0 20px 0", lineHeight: 1.5 }}>
+            <h3 style={{ margin: "0 0 10px 0", color: "#111827", fontSize: "18px", fontWeight: "700" }}>
+              Leave Practice Session?
+            </h3>
+            <p style={{
+              fontSize: "15px",
+              color: "#1f2937",
+              margin: "0 0 20px 0",
+              lineHeight: 1.7,
+              background: "#f9fafb",
+              border: "1px solid #e5e7eb",
+              borderRadius: "8px",
+              padding: "12px",
+              textAlign: "left",
+            }}>
               Your badges, streaks, and session history are saved. Any reminders will be turned off automatically.
               You can rejoin anytime from the Available tab.
             </p>
@@ -189,6 +202,7 @@ export default function PracticeCard({
                   backgroundColor: "#ef4444", color: "white",
                   border: "none", borderRadius: "8px", cursor: leaving ? "not-allowed" : "pointer",
                   opacity: leaving ? 0.7 : 1,
+                  fontWeight: "600",
                 }}
               >
                 {leaving ? "Leaving..." : "Yes, Leave"}
@@ -197,8 +211,11 @@ export default function PracticeCard({
                 onClick={() => setShowLeaveConfirm(false)}
                 style={{
                   flex: 1, padding: "12px", fontSize: "15px",
-                  backgroundColor: "#6b7280", color: "white",
-                  border: "none", borderRadius: "8px", cursor: "pointer",
+                  backgroundColor: "#ffffff",
+                  border: "2px solid #10b981",
+                  color: "#065f46",
+                  borderRadius: "8px", cursor: "pointer",
+                  fontWeight: "600",
                 }}
               >
                 Stay
